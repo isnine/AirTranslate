@@ -50,7 +50,7 @@ enum AppText {
         korean: "번역 언어팩"
     )
     static let output = localized(english: "Output", korean: "출력")
-    static let session = localized(english: "Session", korean: "세션")
+    static let translationSettings = localized(english: "Translation Settings", korean: "번역 설정")
     static let transcript = localized(english: "Transcript", korean: "기록")
     static let liveOutput = localized(english: "Live Output", korean: "실시간 출력")
     static let library = localized(english: "Library", korean: "저장소")
@@ -161,42 +161,14 @@ enum AppText {
     static let saveEdits = localized(english: "Save Edits", korean: "수정 저장")
     static let liveCaptions = localized(english: "Live Captions", korean: "실시간 기록")
     static let transcriptWorkspace = localized(english: "Transcript Workspace", korean: "실시간 기록")
-    static let currentSession = localized(english: "Current Session", korean: "현재 세션")
-    static let previousSession = localized(english: "Previous Session", korean: "이전 세션")
-    static let previousSessions = localized(english: "Previous Sessions", korean: "이전 세션")
     static let delete = localized(english: "Delete", korean: "삭제")
-    static let deleteTranscriptSession = localized(english: "Delete Session", korean: "세션 삭제")
-    static let deleteAllTranscriptSessions = localized(
-        english: "Delete All",
-        korean: "모두 지우기"
+    static let waitingForTranscript = localized(
+        english: "Captions will appear here.",
+        korean: "기록이 시작되면 여기에 표시됩니다."
     )
-    static let deleteTranscriptSessionConfirmationTitle = localized(
-        english: "Delete this session?",
-        korean: "이 세션을 삭제할까요?"
-    )
-    static let deleteTranscriptSessionConfirmationMessage = localized(
-        english: "This previous session will be removed from the transcript workspace. This cannot be undone.",
-        korean: "이전 세션 기록이 실시간 기록 화면에서 삭제됩니다. 이 작업은 되돌릴 수 없습니다."
-    )
-    static let deleteAllTranscriptSessionsConfirmationTitle = localized(
-        english: "Delete all previous sessions?",
-        korean: "이전 세션을 모두 지울까요?"
-    )
-    static let deleteAllTranscriptSessionsConfirmationMessage = localized(
-        english: "All folded previous sessions will be removed from the transcript workspace. This cannot be undone.",
-        korean: "접혀 보관된 이전 세션이 모두 삭제됩니다. 이 작업은 되돌릴 수 없습니다."
-    )
-    static let waitingForSessionTranscript = localized(
-        english: "This session is open. Captions will appear here.",
-        korean: "이 세션이 펼쳐져 있습니다. 기록이 시작되면 여기에 표시됩니다."
-    )
-    static let stopCaptureConfirmationTitle = localized(
-        english: "Stop capture?",
-        korean: "캡처를 중지할까요?"
-    )
-    static let stopCaptureConfirmationMessage = localized(
-        english: "The current transcript stays visible. When you start a new capture, this session will fold into Previous Session.",
-        korean: "현재 기록은 화면에 남습니다. 새 캡처를 시작하면 이 세션은 이전 세션으로 접혀 보관됩니다."
+    static let transcriptSavedToast = localized(
+        english: "Transcript saved",
+        korean: "기록이 저장되었습니다"
     )
     static let copy = localized(english: "Copy", korean: "복사")
     static let copied = localized(english: "Copied", korean: "복사됨")
@@ -244,10 +216,6 @@ enum AppText {
 
     static func lineCount(_ count: Int) -> String {
         localized(english: "\(count) lines", korean: "\(count)줄")
-    }
-
-    static func previousSessionCount(_ count: Int) -> String {
-        localized(english: "\(count) saved", korean: "\(count)개 보관됨")
     }
 
     static func seconds(_ seconds: Double) -> String {

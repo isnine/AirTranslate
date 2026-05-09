@@ -1,9 +1,12 @@
+import AppKit
 import SwiftUI
 
 struct TranscriptLibraryView: View {
     @Bindable var session: TranslationSessionStore
     @Environment(\.dismiss) private var dismiss
     @State private var isDeleteAllConfirmationPresented = false
+    @State private var isCopyFeedbackVisible = false
+    @State private var copyFeedbackToken = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -134,8 +137,35 @@ struct TranscriptLibraryView: View {
             ContentUnavailableView(AppText.noSavedTranscriptSelected, systemImage: "doc.text")
         } else {
             VStack(alignment: .leading, spacing: 12) {
-                Text(AppText.editSaved)
-                    .font(.headline)
+                HStack(spacing: 8) {
+                    Text(AppText.editSaved)
+                        .font(.headline)
+
+                    Spacer(minLength: 0)
+
+                    Button {
+                        if copyDraftText() {
+                            showCopyFeedback()
+                        }
+                    } label: {
+                        Image(systemName: isCopyFeedbackVisible ? "checkmark" : "clipboard")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(isCopyFeedbackVisible ? Color.accentColor : Color.secondary)
+                            .frame(width: 28, height: 28)
+                            .background {
+                                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                    .fill(isCopyFeedbackVisible ? Color.accentColor.opacity(0.16) : Color.primary.opacity(0.05))
+                            }
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                    .strokeBorder(isCopyFeedbackVisible ? Color.accentColor.opacity(0.28) : Color.primary.opacity(0.08))
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .help(isCopyFeedbackVisible ? AppText.copied : AppText.copy)
+                    .accessibilityLabel(AppText.copy)
+                    .disabled(!canCopyDraft)
+                }
 
                 TextEditor(text: $session.savedDraftSourceText)
                     .font(.body)
@@ -164,6 +194,39 @@ struct TranscriptLibraryView: View {
                 }
             }
             .padding(18)
+        }
+    }
+
+    private var canCopyDraft: Bool {
+        session.savedDraftSourceText.rangeOfCharacter(from: .whitespacesAndNewlines.inverted) != nil
+    }
+
+    private func copyDraftText() -> Bool {
+        let trimmedText = session.savedDraftSourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty else { return false }
+
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(trimmedText, forType: .string)
+        return true
+    }
+
+    private func showCopyFeedback() {
+        copyFeedbackToken += 1
+        let token = copyFeedbackToken
+
+        withAnimation(.snappy(duration: 0.16)) {
+            isCopyFeedbackVisible = true
+        }
+
+        Task {
+            try? await Task.sleep(for: .milliseconds(900))
+            await MainActor.run {
+                guard token == copyFeedbackToken else { return }
+
+                withAnimation(.easeOut(duration: 0.18)) {
+                    isCopyFeedbackVisible = false
+                }
+            }
         }
     }
 

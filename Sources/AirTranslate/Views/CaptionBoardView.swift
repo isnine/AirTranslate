@@ -4,9 +4,6 @@ import SwiftUI
 struct CaptionBoardView: View {
     @Bindable var session: TranslationSessionStore
     @State private var isFloatingCaptionVisible = FloatingCaptionWindowController.isOpen
-    @State private var isStopConfirmationPresented = false
-    @State private var transcriptSessionIDPendingDeletion: UUID?
-    @State private var isClearTranscriptSessionsConfirmationPresented = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -31,7 +28,7 @@ struct CaptionBoardView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
-                        if !session.hasTranscriptSessionContent && !session.isRunning {
+                        if !session.hasTranscriptContent && !session.isRunning {
                             ContentUnavailableView(
                                 AppText.noCaptionsYet,
                                 systemImage: "captions.bubble",
@@ -46,51 +43,26 @@ struct CaptionBoardView: View {
                             }
                         }
 
-                        if !session.transcriptSessions.isEmpty {
-                            PreviousSessionsHeader(
-                                sessionCount: session.transcriptSessions.count,
-                                clearAll: {
-                                    isClearTranscriptSessionsConfirmationPresented = true
+                        if session.shouldShowTranscript && session.lines.isEmpty {
+                            Text(AppText.waitingForTranscript)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, minHeight: 96)
+                                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .strokeBorder(Color.primary.opacity(0.08))
                                 }
-                            )
-
-                            ForEach(session.transcriptSessions) { transcriptSession in
-                                TranscriptSessionSection(
-                                    title: AppText.previousSession,
-                                    subtitle: transcriptSession.languageSummary,
-                                    startedAt: transcriptSession.startedAt,
-                                    lines: transcriptSession.lines,
-                                    isExpanded: transcriptSession.isExpanded,
-                                    canToggle: true,
-                                    emptyMessage: AppText.noCaptionsYet,
-                                    delete: {
-                                        transcriptSessionIDPendingDeletion = transcriptSession.id
-                                    },
-                                    toggle: {
-                                        session.toggleTranscriptSession(transcriptSession.id)
-                                    }
-                                )
-                                .id(transcriptSession.id)
-                            }
                         }
 
-                        if session.shouldShowCurrentTranscriptSession {
-                            TranscriptSessionSection(
-                                title: AppText.currentSession,
-                                subtitle: session.languageSummary,
-                                startedAt: session.currentTranscriptSessionDate,
-                                lines: session.lines,
-                                isExpanded: true,
-                                canToggle: false,
-                                emptyMessage: AppText.waitingForSessionTranscript,
-                                delete: nil,
-                                toggle: {}
-                            )
+                        ForEach(session.lines) { line in
+                            CaptionLineView(line: line)
+                                .id(line.id)
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
                         }
                     }
                     .padding(.vertical, 4)
                     .animation(.spring(response: 0.32, dampingFraction: 0.86), value: session.lines.count)
-                    .animation(.spring(response: 0.32, dampingFraction: 0.86), value: session.transcriptSessions.count)
                 }
                 .onChange(of: session.lines.last?.id) { _, id in
                     if let id {
@@ -115,43 +87,6 @@ struct CaptionBoardView: View {
         .onReceive(NotificationCenter.default.publisher(for: FloatingCaptionWindowController.visibilityDidChangeNotification)) { _ in
             syncFloatingCaptionVisibility()
         }
-        .alert(AppText.stopCaptureConfirmationTitle, isPresented: $isStopConfirmationPresented) {
-            Button(AppText.cancel, role: .cancel) {}
-            Button(AppText.stop, role: .destructive) {
-                session.stop()
-            }
-        } message: {
-            Text(AppText.stopCaptureConfirmationMessage)
-        }
-        .alert(
-            AppText.deleteTranscriptSessionConfirmationTitle,
-            isPresented: Binding(
-                get: { transcriptSessionIDPendingDeletion != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        transcriptSessionIDPendingDeletion = nil
-                    }
-                }
-            )
-        ) {
-            Button(AppText.cancel, role: .cancel) {}
-            Button(AppText.delete, role: .destructive) {
-                if let id = transcriptSessionIDPendingDeletion {
-                    session.deleteTranscriptSession(id)
-                }
-                transcriptSessionIDPendingDeletion = nil
-            }
-        } message: {
-            Text(AppText.deleteTranscriptSessionConfirmationMessage)
-        }
-        .alert(AppText.deleteAllTranscriptSessionsConfirmationTitle, isPresented: $isClearTranscriptSessionsConfirmationPresented) {
-            Button(AppText.cancel, role: .cancel) {}
-            Button(AppText.deleteAllTranscriptSessions, role: .destructive) {
-                session.deleteAllTranscriptSessions()
-            }
-        } message: {
-            Text(AppText.deleteAllTranscriptSessionsConfirmationMessage)
-        }
     }
 
     private func toggleFloatingCaptions() {
@@ -161,7 +96,7 @@ struct CaptionBoardView: View {
 
     private func requestCaptureToggle() {
         if session.isRunning {
-            isStopConfirmationPresented = true
+            session.stop()
         } else {
             session.start()
         }
@@ -173,38 +108,6 @@ struct CaptionBoardView: View {
 
     private func syncFloatingCaptionVisibility() {
         isFloatingCaptionVisible = FloatingCaptionWindowController.isOpen
-    }
-}
-
-private struct PreviousSessionsHeader: View {
-    let sessionCount: Int
-    let clearAll: () -> Void
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(AppText.previousSessions)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-
-                Text(AppText.previousSessionCount(sessionCount))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer(minLength: 12)
-
-            Button(role: .destructive, action: clearAll) {
-                Label(AppText.deleteAllTranscriptSessions, systemImage: "trash")
-                    .font(.caption.weight(.semibold))
-            }
-            .buttonStyle(.borderless)
-            .controlSize(.small)
-            .help(AppText.deleteAllTranscriptSessions)
-            .accessibilityLabel(AppText.deleteAllTranscriptSessions)
-        }
-        .padding(.horizontal, 2)
-        .padding(.top, 2)
     }
 }
 
@@ -230,107 +133,6 @@ private struct CaptionLineView: View {
     }
 }
 
-private struct TranscriptSessionSection: View {
-    let title: String
-    let subtitle: String
-    let startedAt: Date
-    let lines: [CaptionLine]
-    let isExpanded: Bool
-    let canToggle: Bool
-    let emptyMessage: String
-    let delete: (() -> Void)?
-    let toggle: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center, spacing: 10) {
-                if canToggle {
-                    Button(action: toggle) {
-                        headerContent
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(title)
-                } else {
-                    headerContent
-                }
-
-                if let delete {
-                    Button(role: .destructive, action: delete) {
-                        Label(AppText.delete, systemImage: "trash")
-                            .font(.caption.weight(.semibold))
-                    }
-                    .buttonStyle(.borderless)
-                    .controlSize(.small)
-                    .help(AppText.deleteTranscriptSession)
-                    .accessibilityLabel(AppText.deleteTranscriptSession)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.06))
-            }
-
-            if isExpanded {
-                if lines.isEmpty {
-                    Text(emptyMessage)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, minHeight: 96)
-                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .strokeBorder(Color.primary.opacity(0.08))
-                        }
-                } else {
-                    LazyVStack(alignment: .leading, spacing: 10) {
-                        ForEach(lines) { line in
-                            CaptionLineView(line: line)
-                                .id(line.id)
-                                .transition(.move(edge: .bottom).combined(with: .opacity))
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private var headerContent: some View {
-        HStack(alignment: .center, spacing: 10) {
-            Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(canToggle ? .secondary : .tertiary)
-                .frame(width: 14)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 8)
-
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(AppText.lineCount(lines.count))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-
-                Text(startedAt, style: .time)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .contentShape(Rectangle())
-    }
-}
 
 private struct TranscriptPane: View {
     let title: String
@@ -682,7 +484,7 @@ private struct SessionOverviewCard: View {
                         isRecentlyClicked: recentlyClickedControl == .capture
                     )
                 }
-                .buttonStyle(HeaderTransportButtonStyle(isActive: isRunning, shadowColor: captureAccentColor))
+                .buttonStyle(HeaderTransportButtonStyle(isActive: isRunning))
                 .help(isRunning ? AppText.stop : AppText.start)
                 .accessibilityLabel(isRunning ? AppText.stop : AppText.start)
                 .accessibilityValue(captureStateTitle)
@@ -697,7 +499,7 @@ private struct SessionOverviewCard: View {
                             isRecentlyClicked: recentlyClickedControl == .pause
                         )
                     }
-                    .buttonStyle(HeaderTransportButtonStyle(isActive: isPaused, shadowColor: isPaused ? .accentColor : .secondary))
+                    .buttonStyle(HeaderTransportButtonStyle(isActive: isPaused))
                     .help(isPaused ? AppText.resume : AppText.pause)
                     .accessibilityLabel(isPaused ? AppText.resume : AppText.pause)
                     .accessibilityValue(isPaused ? AppText.paused : AppText.listening)
@@ -712,7 +514,7 @@ private struct SessionOverviewCard: View {
                         isRecentlyClicked: recentlyClickedControl == .floatingCaptions
                     )
                 }
-                .buttonStyle(HeaderTransportButtonStyle(isActive: isFloatingCaptionVisible, shadowColor: .green))
+                .buttonStyle(HeaderTransportButtonStyle(isActive: isFloatingCaptionVisible))
                 .help(AppText.showFloatingCaptions)
                 .accessibilityLabel(AppText.showFloatingCaptions)
                 .accessibilityValue(isFloatingCaptionVisible ? AppText.floatingCaptionPowerOn : AppText.floatingCaptionPowerOff)
@@ -720,12 +522,10 @@ private struct SessionOverviewCard: View {
             }
             .padding(5)
             .background(.ultraThinMaterial, in: Capsule())
-            .background(headerClusterAccentColor.opacity(isRunning || isFloatingCaptionVisible ? 0.08 : 0), in: Capsule())
             .overlay {
                 Capsule()
-                    .strokeBorder(headerClusterAccentColor.opacity(isRunning || isFloatingCaptionVisible ? 0.22 : 0.08), lineWidth: 1)
+                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
             }
-            .shadow(color: headerClusterAccentColor.opacity(isRunning && !isPaused ? 0.16 : 0), radius: 12)
             .animation(.spring(response: 0.22, dampingFraction: 0.82), value: recentlyClickedControl)
             .animation(.spring(response: 0.24, dampingFraction: 0.78), value: isRunning)
             .animation(.spring(response: 0.24, dampingFraction: 0.78), value: isPaused)
@@ -750,26 +550,6 @@ private struct SessionOverviewCard: View {
             return AppText.listening
         }
         return AppText.ready
-    }
-
-    private var captureAccentColor: Color {
-        if isPaused {
-            return .orange
-        }
-        if isRunning {
-            return .red
-        }
-        return .accentColor
-    }
-
-    private var headerClusterAccentColor: Color {
-        if isPaused {
-            return .orange
-        }
-        if isRunning || isFloatingCaptionVisible {
-            return .green
-        }
-        return .secondary
     }
 
     private func registerClick(_ control: HeaderControl, action: () -> Void) {
@@ -801,7 +581,7 @@ private struct HeaderCaptureTransportButton: View {
     }
 
     private var systemImage: String {
-        isRunning ? "stop.fill" : "play.fill"
+        isRunning ? "xmark" : "play.fill"
     }
 
     var body: some View {
@@ -809,15 +589,13 @@ private struct HeaderCaptureTransportButton: View {
             accentColor: accentColor,
             isActive: isRunning,
             isRecentlyClicked: isRecentlyClicked,
-            activeFillOpacity: isRunning ? 0.28 : 0.18,
-            activeStrokeOpacity: isRunning ? 0.62 : 0.36,
-            liveDotColor: isRunning ? (isPaused ? .orange : .green) : nil
+            activeFillOpacity: isRunning ? 0.14 : 0.18,
+            activeStrokeOpacity: isRunning ? 0.36 : 0.36
         ) {
             Image(systemName: systemImage)
-                .font(.system(size: 14, weight: .black))
-                .foregroundStyle(isRunning ? Color.white : accentColor)
-                .frame(width: isRunning ? 21 : 18, height: isRunning ? 21 : 18)
-                .background(isRunning ? accentColor : Color.clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .font(.system(size: isRunning ? 15 : 14, weight: .black))
+                .foregroundStyle(accentColor)
+                .frame(width: 18, height: 18)
                 .offset(x: isRunning ? 0 : 1)
         }
     }
@@ -860,9 +638,8 @@ private struct HeaderFloatingCaptionToggleButton: View {
             accentColor: accentColor,
             isActive: isOn,
             isRecentlyClicked: isRecentlyClicked,
-            activeFillOpacity: 0.2,
-            activeStrokeOpacity: 0.5,
-            liveDotColor: isOn ? .green : Color.secondary.opacity(0.62)
+            activeFillOpacity: 0.11,
+            activeStrokeOpacity: 0.32
         ) {
             Image(systemName: isOn ? "captions.bubble.fill" : "captions.bubble")
                 .font(.system(size: 14, weight: .bold))
@@ -873,13 +650,12 @@ private struct HeaderFloatingCaptionToggleButton: View {
 
 private struct HeaderTransportButtonStyle: ButtonStyle {
     let isActive: Bool
-    let shadowColor: Color
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.92 : 1)
             .brightness(configuration.isPressed ? 0.05 : 0)
-            .shadow(color: shadowColor.opacity(isActive ? 0.2 : 0), radius: isActive ? 9 : 0)
+            .opacity(isActive || !configuration.isPressed ? 1 : 0.92)
             .animation(.spring(response: 0.2, dampingFraction: 0.72), value: configuration.isPressed)
     }
 }

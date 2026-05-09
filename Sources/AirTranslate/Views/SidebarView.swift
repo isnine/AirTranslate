@@ -70,19 +70,20 @@ struct SidebarView: View {
     }
 
     private var sessionCard: some View {
-        SidebarCard(title: AppText.session) {
+        SidebarCard(title: AppText.translationSettings) {
             VStack(spacing: 10) {
-                Picker(AppText.from, selection: $session.sourceLanguage) {
-                    ForEach(LanguageOption.supported) { language in
-                        Text(language.localizedTitle).tag(language)
-                    }
-                }
+                HStack(spacing: 6) {
+                    CompactLanguagePicker(title: AppText.from, selection: $session.sourceLanguage)
 
-                Picker(AppText.to, selection: $session.targetLanguage) {
-                    ForEach(LanguageOption.supported) { language in
-                        Text(language.localizedTitle).tag(language)
-                    }
+                    Image(systemName: "arrow.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.tertiary)
+                        .frame(width: 12)
+                        .accessibilityHidden(true)
+
+                    CompactLanguagePicker(title: AppText.to, selection: $session.targetLanguage)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 Divider()
 
@@ -188,6 +189,49 @@ struct SidebarView: View {
             return .green
         }
         return .secondary
+    }
+}
+
+private struct CompactLanguagePicker: View {
+    let title: String
+    @Binding var selection: LanguageOption
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, alignment: .trailing)
+                .lineLimit(1)
+
+            Menu {
+                ForEach(LanguageOption.supported) { language in
+                    Button(language.localizedTitle) {
+                        selection = language
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(selection.localizedTitle)
+                        .font(.callout.weight(.semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
+
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 9)
+                .padding(.vertical, 7)
+                .frame(width: 72)
+                .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .help(title)
+            .accessibilityLabel(title)
+            .accessibilityValue(selection.localizedTitle)
+        }
+        .frame(width: 100)
     }
 }
 

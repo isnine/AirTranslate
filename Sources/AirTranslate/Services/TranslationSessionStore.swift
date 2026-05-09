@@ -27,7 +27,6 @@ private struct TranslationRequest {
 @MainActor
 final class TranslationSessionStore {
     private static let maxTranslationCacheEntries = 2_000
-    private static let maxArchivedTranscriptSessions = 12
 
     var isRunning = false
     var isPaused = false
@@ -85,8 +84,9 @@ final class TranslationSessionStore {
         didSet { persistSelectedSettings() }
     }
     var statusMessage = AppText.ready
+    var toastMessage: String?
+    var toastSequence = 0
     var lines: [CaptionLine] = []
-    var transcriptSessions: [TranscriptSessionGroup] = []
     var savedTranscripts: [SavedTranscript] = []
     var selectedSavedTranscriptID: String?
     var savedDraftSourceText = ""
@@ -107,7 +107,6 @@ final class TranslationSessionStore {
     private var lastRecognizedText = ""
     private var lastRecognizedWasFinal = false
     private var lastRecognitionAt = Date.distantPast
-    private var currentTranscriptSessionStartedAt = Date()
     private var currentLineID: UUID?
     private var transcriptCleanupTask: Task<Void, Never>?
     private var translationTask: Task<Void, Never>?
@@ -124,6 +123,7 @@ final class TranslationSessionStore {
     private var activeAutosaveTranslatedText = ""
     private var isRestoringSelectedSettings = false
     private var modelAvailabilityTask: Task<Void, Never>?
+    private var toastDismissTask: Task<Void, Never>?
     private var lastSpokenTranslatedText = ""
     private var spokenTranslationUnitKeys: Set<String> = []
     private var spokenTranslationUnitKeyOrder: [String] = []
@@ -139,9 +139,7 @@ final class TranslationSessionStore {
     func start() {
         guard !isRunning else { return }
 
-        archiveCurrentTranscriptSessionIfNeeded()
         resetLiveSessionState(clearsVisibleLines: true)
-        currentTranscriptSessionStartedAt = Date()
         isPaused = false
         transcriber.setPaused(false)
         isRunning = true
@@ -168,13 +166,16 @@ final class TranslationSessionStore {
     func stop() {
         guard isRunning else { return }
 
-        flushPendingTranscriptSave()
+        let didSaveTranscript = flushPendingTranscriptSave()
         resetLiveSessionState(clearsVisibleLines: false)
         isPaused = false
         transcriber.setPaused(false)
         isRunning = false
         statusMessage = AppText.stopped
         stopCaptioners()
+        if didSaveTranscript {
+            showToast(AppText.transcriptSavedToast)
+        }
 
         Task {
             await capture.stop()
@@ -203,7 +204,7 @@ final class TranslationSessionStore {
     }
 
     func prepareForTermination() {
-        flushPendingTranscriptSave()
+        _ = flushPendingTranscriptSave()
     }
 
     func openPrivacySettings() {
@@ -279,29 +280,12 @@ final class TranslationSessionStore {
         !floatingSourceText.isEmpty || !floatingTranslationText.isEmpty
     }
 
-    var hasTranscriptSessionContent: Bool {
-        !transcriptSessions.isEmpty || !lines.isEmpty
+    var hasTranscriptContent: Bool {
+        !lines.isEmpty
     }
 
-    var shouldShowCurrentTranscriptSession: Bool {
-        isRunning || !lines.isEmpty || !transcriptSessions.isEmpty
-    }
-
-    var currentTranscriptSessionDate: Date {
-        currentTranscriptSessionStartedAt
-    }
-
-    func toggleTranscriptSession(_ id: UUID) {
-        guard let index = transcriptSessions.firstIndex(where: { $0.id == id }) else { return }
-        transcriptSessions[index].isExpanded.toggle()
-    }
-
-    func deleteTranscriptSession(_ id: UUID) {
-        transcriptSessions.removeAll { $0.id == id }
-    }
-
-    func deleteAllTranscriptSessions() {
-        transcriptSessions.removeAll()
+    var shouldShowTranscript: Bool {
+        isRunning || !lines.isEmpty
     }
 
     func selectSavedTranscript(_ id: String) {
@@ -404,22 +388,6 @@ final class TranslationSessionStore {
 
         if clearsVisibleLines {
             lines.removeAll()
-        }
-    }
-
-    private func archiveCurrentTranscriptSessionIfNeeded() {
-        guard !lines.isEmpty else { return }
-
-        transcriptSessions.append(
-            TranscriptSessionGroup(
-                startedAt: currentTranscriptSessionStartedAt,
-                languageSummary: languageSummary,
-                lines: lines,
-                isExpanded: false
-            )
-        )
-        while transcriptSessions.count > Self.maxArchivedTranscriptSessions {
-            transcriptSessions.removeFirst()
         }
     }
 
@@ -574,9 +542,10 @@ final class TranslationSessionStore {
         }
     }
 
-    private func flushPendingTranscriptSave() {
+    @discardableResult
+    private func flushPendingTranscriptSave() -> Bool {
         let sourceText = activeAutosaveSourceText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !sourceText.isEmpty else { return }
+        guard !sourceText.isEmpty else { return false }
 
         let updatedAt = Date()
         let baseFileName = activeAutosaveTranscriptID ?? makeTranscriptFileName(for: sourceText, date: updatedAt)
@@ -588,7 +557,7 @@ final class TranslationSessionStore {
 
         for savedFile in savedFiles {
             guard writeTranscriptText(savedFile.text, fileName: savedFile.fileName) else {
-                return
+                return false
             }
         }
 
@@ -598,6 +567,7 @@ final class TranslationSessionStore {
         for savedFile in savedFiles {
             upsertSavedTranscript(fileName: savedFile.fileName, sourceText: savedFile.text, updatedAt: updatedAt)
         }
+        return true
     }
 
     private func savedTranscriptFiles(
@@ -661,6 +631,19 @@ final class TranslationSessionStore {
             savedDraftSourceText = sourceText
         }
         sortSavedTranscripts()
+    }
+
+    private func showToast(_ message: String) {
+        toastDismissTask?.cancel()
+        toastMessage = message
+        toastSequence += 1
+
+        let sequence = toastSequence
+        toastDismissTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            guard toastSequence == sequence else { return }
+            toastMessage = nil
+        }
     }
 
     private func sortSavedTranscripts() {
