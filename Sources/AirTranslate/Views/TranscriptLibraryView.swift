@@ -116,10 +116,13 @@ struct TranscriptLibraryView: View {
                             transcript: transcript,
                             isSelected: session.selectedSavedTranscriptID == transcript.id
                         )
+                        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     }
                     .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(10)
         }
         .background(.bar)

@@ -578,31 +578,50 @@ final class TranslationSessionStore {
         let sourceText = activeAutosaveSourceText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !sourceText.isEmpty else { return }
 
-        let savedText = savedTranscriptText(
-            sourceText: sourceText,
-            translatedText: activeAutosaveTranslatedText
-        )
         let updatedAt = Date()
-        let fileName = activeAutosaveTranscriptID ?? makeTranscriptFileName(for: sourceText, date: updatedAt)
-        guard writeTranscriptText(savedText, fileName: fileName) else { return }
+        let baseFileName = activeAutosaveTranscriptID ?? makeTranscriptFileName(for: sourceText, date: updatedAt)
+        let savedFiles = savedTranscriptFiles(
+            sourceText: sourceText,
+            translatedText: activeAutosaveTranslatedText,
+            baseFileName: baseFileName
+        )
+
+        for savedFile in savedFiles {
+            guard writeTranscriptText(savedFile.text, fileName: savedFile.fileName) else {
+                return
+            }
+        }
+
         activeAutosaveTranscriptID = nil
         activeAutosaveSourceText = ""
         activeAutosaveTranslatedText = ""
-        upsertSavedTranscript(fileName: fileName, sourceText: savedText, updatedAt: updatedAt)
+        for savedFile in savedFiles {
+            upsertSavedTranscript(fileName: savedFile.fileName, sourceText: savedFile.text, updatedAt: updatedAt)
+        }
     }
 
-    private func savedTranscriptText(sourceText: String, translatedText: String) -> String {
+    private func savedTranscriptFiles(
+        sourceText: String,
+        translatedText: String,
+        baseFileName: String
+    ) -> [(fileName: String, text: String)] {
         let sourceText = sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
         let translatedText = translatedText.trimmingCharacters(in: .whitespacesAndNewlines)
 
         switch savedTranscriptContentMode {
         case .original:
-            return sourceText
+            return [(baseFileName, sourceText)]
         case .translation:
-            return translatedText.isEmpty ? sourceText : translatedText
+            return [(baseFileName, translatedText.isEmpty ? sourceText : translatedText)]
         case .originalAndTranslation:
-            guard !translatedText.isEmpty else { return sourceText }
-            return "\(AppText.original)\n\(sourceText)\n\n\(AppText.translation)\n\(translatedText)"
+            guard !translatedText.isEmpty else {
+                return [(baseFileName, sourceText)]
+            }
+
+            return [
+                (transcriptVariantFileName(baseFileName, suffix: "original"), sourceText),
+                (transcriptVariantFileName(baseFileName, suffix: "translation"), translatedText)
+            ]
         }
     }
 
@@ -662,6 +681,11 @@ final class TranslationSessionStore {
         transcriptsDirectoryURL.appendingPathComponent(fileName)
     }
 
+    private func transcriptVariantFileName(_ fileName: String, suffix: String) -> String {
+        let stem = fileName.hasSuffix(".txt") ? String(fileName.dropLast(4)) : fileName
+        return "\(stem)-\(suffix).txt"
+    }
+
     private func makeTranscriptFileName(for sourceText: String, date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -671,12 +695,21 @@ final class TranslationSessionStore {
         var fileName = "\(baseName).txt"
         var suffix = 2
 
-        while FileManager.default.fileExists(atPath: transcriptURL(fileName: fileName).path) {
+        while transcriptFileExists(fileName) {
             fileName = "\(baseName)-\(suffix).txt"
             suffix += 1
         }
 
         return fileName
+    }
+
+    private func transcriptFileExists(_ fileName: String) -> Bool {
+        let fileNames = [
+            fileName,
+            transcriptVariantFileName(fileName, suffix: "original"),
+            transcriptVariantFileName(fileName, suffix: "translation")
+        ]
+        return fileNames.contains { FileManager.default.fileExists(atPath: transcriptURL(fileName: $0).path) }
     }
 
     private func shortFileTitle(from sourceText: String) -> String {
