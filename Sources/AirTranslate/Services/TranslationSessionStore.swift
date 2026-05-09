@@ -1056,11 +1056,6 @@ final class TranslationSessionStore {
         }
 
         let sharedPrefixLength = commonPrefixLength(normalizedIncoming, normalizedExisting)
-        let shorterLength = min(normalizedIncoming.count, normalizedExisting.count)
-        if sharedPrefixLength >= 24 || sharedPrefixLength * 2 >= shorterLength {
-            return true
-        }
-
         return sharedPrefixLength >= 8
             && tokenOverlapRatio(normalizedIncoming, normalizedExisting) >= 0.58
     }
