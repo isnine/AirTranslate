@@ -9,7 +9,8 @@ private enum DraftEditorField: Hashable {
 struct TranscriptLibraryView: View {
     @Bindable var session: TranslationSessionStore
     @Environment(\.dismiss) private var dismiss
-    @FocusState private var focusedDraftEditor: DraftEditorField?
+    @State private var focusedDraftEditor: DraftEditorField?
+    @State private var draftEditorTextViews: [DraftEditorField: NSTextView] = [:]
     @State private var isDeleteAllConfirmationPresented = false
     @State private var isCopyFeedbackVisible = false
     @State private var copyFeedbackToken = 0
@@ -239,16 +240,18 @@ struct TranscriptLibraryView: View {
                     .disabled(!hasDraftText(for: field))
             }
 
-            TextEditor(text: text)
-                .font(.body)
-                .focused($focusedDraftEditor, equals: field)
-                .writingToolsBehavior(.complete)
-                .scrollContentBackground(.hidden)
-                .background(.quaternary.opacity(0.18), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.08))
-                }
+            WritingToolsTextEditor(
+                text: text,
+                field: field,
+                focusedField: $focusedDraftEditor
+            ) { field, textView in
+                draftEditorTextViews[field] = textView
+            }
+            .background(.quaternary.opacity(0.18), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.08))
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -308,22 +311,12 @@ struct TranscriptLibraryView: View {
     }
 
     private func showWritingTools(for field: DraftEditorField) {
-        focusedDraftEditor = nil
+        focusedDraftEditor = field
         DispatchQueue.main.async {
-            focusedDraftEditor = field
-            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(120)) {
-                _ = showWritingToolsForFocusedTextView()
-            }
+            guard let textView = draftEditorTextViews[field] else { return }
+            textView.window?.makeFirstResponder(textView)
+            NSApp.sendAction(#selector(NSResponder.showWritingTools(_:)), to: textView, from: nil)
         }
-    }
-
-    @discardableResult
-    private func showWritingToolsForFocusedTextView() -> Bool {
-        guard let textView = NSApp.keyWindow?.firstResponder as? NSTextView else {
-            return false
-        }
-
-        return NSApp.sendAction(#selector(NSResponder.showWritingTools(_:)), to: textView, from: nil)
     }
 
     private func showCopyFeedback() {
@@ -354,6 +347,94 @@ struct TranscriptLibraryView: View {
 
         if let firstTranscript = session.savedTranscripts.first {
             session.selectSavedTranscript(firstTranscript.id)
+        }
+    }
+}
+
+private struct WritingToolsTextEditor: NSViewRepresentable {
+    @Binding var text: String
+    let field: DraftEditorField
+    @Binding var focusedField: DraftEditorField?
+    let onTextViewResolved: (DraftEditorField, NSTextView?) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground = false
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .noBorder
+
+        let textView = NSTextView(frame: .zero)
+        textView.delegate = context.coordinator
+        textView.string = text
+        textView.font = .systemFont(ofSize: NSFont.systemFontSize)
+        textView.textColor = .labelColor
+        textView.drawsBackground = false
+        textView.isEditable = true
+        textView.isSelectable = true
+        textView.isRichText = false
+        textView.importsGraphics = false
+        textView.allowsUndo = true
+        textView.textContainerInset = NSSize(width: 8, height: 8)
+        textView.minSize = NSSize(width: 0, height: 0)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.heightTracksTextView = false
+        textView.writingToolsBehavior = .complete
+        textView.allowedWritingToolsResultOptions = .plainText
+
+        scrollView.documentView = textView
+        context.coordinator.textView = textView
+        DispatchQueue.main.async {
+            onTextViewResolved(field, textView)
+        }
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        context.coordinator.parent = self
+        guard let textView = context.coordinator.textView else { return }
+
+        if textView.string != text {
+            textView.string = text
+        }
+
+        if focusedField == field, textView.window?.firstResponder !== textView {
+            DispatchQueue.main.async {
+                textView.window?.makeFirstResponder(textView)
+            }
+        }
+
+        DispatchQueue.main.async {
+            onTextViewResolved(field, textView)
+        }
+    }
+
+    static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
+        DispatchQueue.main.async {
+            coordinator.parent.onTextViewResolved(coordinator.parent.field, nil)
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: WritingToolsTextEditor
+        weak var textView: NSTextView?
+
+        init(_ parent: WritingToolsTextEditor) {
+            self.parent = parent
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            parent.text = textView.string
         }
     }
 }

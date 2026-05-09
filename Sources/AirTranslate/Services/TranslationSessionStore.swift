@@ -876,25 +876,136 @@ final class TranslationSessionStore {
             pendingParagraphBreakBeforePartial = !committedSourceText.isEmpty
         }
 
+        let incomingPartial = uncommittedIncomingText(from: trimmedIncoming)
+        guard !incomingPartial.isEmpty else { return visibleTranscript() }
+
         if currentPartialText.isEmpty {
-            if committedTextAlreadyContains(trimmedIncoming) {
-                return visibleTranscript()
-            }
-            currentPartialText = trimmedIncoming
+            currentPartialText = incomingPartial
             return visibleTranscript()
         }
 
-        if trimmedIncoming.count + 2 >= currentPartialText.count
-            || trimmedIncoming.hasPrefix(currentPartialText)
-            || currentPartialText.hasPrefix(trimmedIncoming) {
-            currentPartialText = trimmedIncoming.count >= currentPartialText.count ? trimmedIncoming : currentPartialText
+        if isRevisionOfCurrentPartial(incomingPartial) {
+            currentPartialText = preferredPartialText(current: currentPartialText, incoming: incomingPartial)
             return visibleTranscript()
         }
 
         commitCurrentPartial()
         pendingParagraphBreakBeforePartial = hadLongSilence && !committedSourceText.isEmpty
-        currentPartialText = trimmedIncoming
+        currentPartialText = uncommittedIncomingText(from: trimmedIncoming)
         return visibleTranscript()
+    }
+
+    private func uncommittedIncomingText(from incoming: String) -> String {
+        if committedTextAlreadyContains(incoming) {
+            return ""
+        }
+
+        if let tail = incomingTailAfterCommittedText(incoming) {
+            return tail
+        }
+
+        return incoming
+    }
+
+    private func incomingTailAfterCommittedText(_ incoming: String) -> String? {
+        let normalizedCommitted = normalizedTranscriptForComparison(committedSourceText)
+        let normalizedIncoming = normalizedTranscriptForComparison(incoming)
+        guard isWholeTextPrefix(normalizedCommitted, of: normalizedIncoming) else {
+            return nil
+        }
+
+        guard normalizedIncoming != normalizedCommitted else {
+            return ""
+        }
+
+        guard let tailStart = originalIndex(
+            in: incoming,
+            afterNormalizedPrefix: normalizedCommitted
+        ) else {
+            return nil
+        }
+
+        return String(incoming[tailStart...]).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func originalIndex(
+        in text: String,
+        afterNormalizedPrefix normalizedPrefix: String
+    ) -> String.Index? {
+        guard !normalizedPrefix.isEmpty else { return text.startIndex }
+
+        var normalizedText = ""
+        var previousWasWhitespace = true
+
+        for index in text.indices {
+            let character = text[index]
+            let nextIndex = text.index(after: index)
+
+            if character.isWhitespace {
+                guard !previousWasWhitespace else { continue }
+                previousWasWhitespace = true
+                normalizedText.append(" ")
+            } else {
+                previousWasWhitespace = false
+                normalizedText.append(character)
+            }
+
+            guard normalizedPrefix.hasPrefix(normalizedText) else {
+                return nil
+            }
+
+            if normalizedText == normalizedPrefix {
+                return nextIndex
+            }
+        }
+
+        return nil
+    }
+
+    private func isRevisionOfCurrentPartial(_ incomingPartial: String) -> Bool {
+        let normalizedCurrent = normalizedTranscriptForComparison(currentPartialText)
+        let normalizedIncoming = normalizedTranscriptForComparison(incomingPartial)
+        guard !normalizedCurrent.isEmpty, !normalizedIncoming.isEmpty else {
+            return false
+        }
+
+        if normalizedIncoming == normalizedCurrent
+            || isWholeTextPrefix(normalizedCurrent, of: normalizedIncoming)
+            || isWholeTextPrefix(normalizedIncoming, of: normalizedCurrent) {
+            return true
+        }
+
+        let sharedPrefixLength = commonPrefixLength(normalizedCurrent, normalizedIncoming)
+        let shorterLength = min(normalizedCurrent.count, normalizedIncoming.count)
+        return shorterLength >= 12 && sharedPrefixLength * 2 >= shorterLength
+    }
+
+    private func preferredPartialText(current: String, incoming: String) -> String {
+        let normalizedCurrent = normalizedTranscriptForComparison(current)
+        let normalizedIncoming = normalizedTranscriptForComparison(incoming)
+
+        if normalizedCurrent.count > normalizedIncoming.count + 2 {
+            return current
+        }
+
+        return incoming
+    }
+
+    private func isWholeTextPrefix(_ prefix: String, of text: String) -> Bool {
+        guard !prefix.isEmpty, text.hasPrefix(prefix) else { return false }
+        guard text != prefix else { return true }
+        guard let nextCharacter = text.dropFirst(prefix.count).first,
+              let previousCharacter = prefix.last
+        else {
+            return true
+        }
+
+        return !isLetterOrNumber(previousCharacter) || !isLetterOrNumber(nextCharacter)
+    }
+
+    private func isLetterOrNumber(_ character: Character) -> Bool {
+        let lettersAndNumbers = CharacterSet.letters.union(.decimalDigits)
+        return character.unicodeScalars.allSatisfy { lettersAndNumbers.contains($0) }
     }
 
     private func commitCurrentPartial() {
