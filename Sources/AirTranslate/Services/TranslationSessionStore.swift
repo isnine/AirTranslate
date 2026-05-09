@@ -20,16 +20,34 @@ final class TranslationSessionStore {
     var isRunning = false
     var isPaused = false
     var isDubbingEnabled = false {
-        didSet { persistSelectedSettings() }
+        didSet {
+            persistSelectedSettings()
+            if isDubbingEnabled {
+                primeDubbingBaselineToCurrentTranslation()
+            } else {
+                stopSpeaking()
+                lastSpokenTranslatedText = ""
+                clearSpokenTranslationUnits()
+            }
+        }
     }
     var sourceLanguage = LanguageOption.supported[0] {
-        didSet { persistSelectedSettings() }
+        didSet {
+            persistSelectedSettings()
+            resetDubbingProgress()
+        }
     }
     var targetLanguage = LanguageOption.supported[1] {
-        didSet { persistSelectedSettings() }
+        didSet {
+            persistSelectedSettings()
+            resetDubbingProgress()
+        }
     }
     var selectedModel = IntelligenceModel.appleSystem {
-        didSet { persistSelectedSettings() }
+        didSet {
+            persistSelectedSettings()
+            resetDubbingProgress()
+        }
     }
     var isTranscriptLintEnabled = false {
         didSet { persistSelectedSettings() }
@@ -52,7 +70,7 @@ final class TranslationSessionStore {
     private let capture = SystemAudioCapture()
     private let transcriber = LiveSpeechTranscriber()
     private let translator = AppleTranslationService()
-    private let speaker = AVSpeechSynthesizer()
+    private let speechOutput = TranslatedSpeechOutput()
     private let spellChecker = NSSpellChecker.shared
     private let spellDocumentTag = NSSpellChecker.uniqueSpellDocumentTag()
     private var audioSampleCount = 0
@@ -62,6 +80,7 @@ final class TranslationSessionStore {
     private var lastRecognitionAt = Date.distantPast
     private var currentLineID: UUID?
     private var transcriptCleanupTask: Task<Void, Never>?
+    private var translationTask: Task<Void, Never>?
     private var committedSourceText = ""
     private var currentPartialText = ""
     private var pendingParagraphBreakBeforePartial = false
@@ -70,6 +89,9 @@ final class TranslationSessionStore {
     private var activeAutosaveTranscriptID: String?
     private var activeAutosaveSourceText = ""
     private var isRestoringSelectedSettings = false
+    private var lastSpokenTranslatedText = ""
+    private var spokenTranslationUnitKeys: Set<String> = []
+    private var spokenTranslationUnitKeyOrder: [String] = []
 
     init() {
         restoreSelectedSettings()
@@ -122,6 +144,11 @@ final class TranslationSessionStore {
         currentPartialText = ""
         pendingParagraphBreakBeforePartial = false
         pendingTranslationSourceText = ""
+        stopSpeaking()
+        lastSpokenTranslatedText = ""
+        clearSpokenTranslationUnits()
+        translationTask?.cancel()
+        translationTask = nil
         transcriptCleanupTask?.cancel()
         transcriptCleanupTask = nil
         stopCaptioners()
@@ -536,12 +563,12 @@ final class TranslationSessionStore {
     }
 
     private func commitCurrentPartial() {
-        let partial = currentPartialText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let partial = organizeTranscript(currentPartialText, language: sourceLanguage)
         guard !partial.isEmpty else { return }
 
         if committedSourceText.isEmpty {
             committedSourceText = partial
-        } else if !committedSourceText.hasSuffix(partial) && !committedSourceText.contains(partial) {
+        } else if shouldAppendCommittedPartial(partial) {
             let separator = pendingParagraphBreakBeforePartial ? "\n\n" : "\n"
             committedSourceText += separator + partial
         }
@@ -553,24 +580,44 @@ final class TranslationSessionStore {
         let committed = committedSourceText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !committed.isEmpty else { return false }
 
-        return committed == text
-            || committed.hasSuffix(text)
-            || committed.contains("\n" + text)
+        let normalizedCommitted = normalizedTranscriptForComparison(committed)
+        let normalizedText = normalizedTranscriptForComparison(text)
+        guard !normalizedText.isEmpty else { return false }
+
+        return normalizedCommitted == normalizedText
+            || normalizedCommitted.hasSuffix(normalizedText)
+            || normalizedCommitted.contains(normalizedText)
+    }
+
+    private func shouldAppendCommittedPartial(_ partial: String) -> Bool {
+        let normalizedCommitted = normalizedTranscriptForComparison(committedSourceText)
+        let normalizedPartial = normalizedTranscriptForComparison(partial)
+        guard !normalizedPartial.isEmpty else { return false }
+
+        return !normalizedCommitted.hasSuffix(normalizedPartial)
+            && !normalizedCommitted.contains(normalizedPartial)
+    }
+
+    private func normalizedTranscriptForComparison(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func visibleTranscript() -> String {
         let committed = committedSourceText.trimmingCharacters(in: .whitespacesAndNewlines)
         let partial = currentPartialText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let organizedPartial = partial.isEmpty ? "" : organizeTranscript(partial, language: sourceLanguage)
 
         guard !committed.isEmpty else {
-            return organizeTranscript(partial, language: sourceLanguage)
+            return organizedPartial
         }
-        guard !partial.isEmpty else {
-            return organizeTranscript(committed, language: sourceLanguage)
+        guard !organizedPartial.isEmpty else {
+            return committed
         }
 
         let separator = pendingParagraphBreakBeforePartial ? "\n\n" : "\n"
-        return organizeTranscript(committed + separator + partial, language: sourceLanguage)
+        return committed + separator + organizedPartial
     }
 
     private func scheduleTranscriptCleanup() {
@@ -859,6 +906,7 @@ final class TranslationSessionStore {
             var translatedSegments: [String] = []
 
             for segment in segments {
+                try Task.checkCancellation()
                 let cacheKey = translationCacheKey(segment: segment, source: source, target: target)
                 if let cachedSegment = translatedSegmentsBySource[cacheKey] {
                     translatedSegments.append(cachedSegment)
@@ -871,6 +919,7 @@ final class TranslationSessionStore {
                     target: target,
                     model: selectedModel
                 )
+                try Task.checkCancellation()
                 let organizedSegment = organizeTranscript(translatedSegment, language: target)
                 translatedSegmentsBySource[cacheKey] = organizedSegment
                 translatedSegments.append(organizedSegment)
@@ -890,15 +939,21 @@ final class TranslationSessionStore {
         let sourceText = line.sourceText
         guard pendingTranslationSourceText != sourceText else { return }
         pendingTranslationSourceText = sourceText
+        translationTask?.cancel()
 
-        Task {
+        translationTask = Task { @MainActor in
             do {
+                try await Task.sleep(for: .milliseconds(180))
+                try Task.checkCancellation()
                 let translatedText = try await translateTranscript(
                     sourceText,
                     source: source,
                     target: target
                 )
+                try Task.checkCancellation()
                 updateTranslation(translatedText, for: line, matching: sourceText)
+            } catch is CancellationError {
+                return
             } catch {
                 if pendingTranslationSourceText == sourceText {
                     pendingTranslationSourceText = ""
@@ -931,9 +986,7 @@ final class TranslationSessionStore {
             revision: lines[index].revision + 1
         )
 
-        if isRunning, isDubbingEnabled, line.isFinal {
-            speak(organizedTranslatedText)
-        }
+        speakTranslatedDeltaIfNeeded(organizedTranslatedText)
     }
 
     private func translationDirection(
@@ -945,9 +998,170 @@ final class TranslationSessionStore {
 
     private func speak(_ text: String) {
         guard !text.isEmpty else { return }
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = AVSpeechSynthesisVoice(language: targetLanguage.id)
-        speaker.speak(utterance)
+        speechOutput.speak(text, language: targetLanguage)
+    }
+
+    private func speakTranslatedDeltaIfNeeded(_ translatedText: String) {
+        guard isRunning, isDubbingEnabled else { return }
+
+        let currentText = speechReadyText(translatedText)
+        guard !currentText.isEmpty else { return }
+
+        let previousText = lastSpokenTranslatedText
+        lastSpokenTranslatedText = currentText
+
+        guard let delta = speechDelta(previous: previousText, current: currentText),
+              let unspokenDelta = unspokenSpeechText(from: delta)
+        else {
+            return
+        }
+
+        speak(unspokenDelta)
+    }
+
+    private func speechReadyText(_ text: String) -> String {
+        guard text != AppText.translating else { return "" }
+
+        return text
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func speechDelta(previous: String, current: String) -> String? {
+        guard previous != current else { return nil }
+        guard !current.isEmpty else { return nil }
+
+        if previous.isEmpty {
+            return current
+        }
+
+        if current.hasPrefix(previous) {
+            return speakableText(String(current.dropFirst(previous.count)))
+        }
+
+        let sharedPrefixLength = commonPrefixLength(previous, current)
+        if sharedPrefixLength > previous.count / 2 {
+            return speakableText(String(current.dropFirst(sharedPrefixLength)))
+        }
+
+        return nil
+    }
+
+    private func commonPrefixLength(_ lhs: String, _ rhs: String) -> Int {
+        var length = 0
+        for (leftCharacter, rightCharacter) in zip(lhs, rhs) {
+            guard leftCharacter == rightCharacter else { break }
+            length += 1
+        }
+        return length
+    }
+
+    private func speakableText(_ text: String) -> String? {
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedText.rangeOfCharacter(from: .letters.union(.decimalDigits)) != nil else {
+            return nil
+        }
+        return trimmedText
+    }
+
+    private func unspokenSpeechText(from text: String) -> String? {
+        let units = speechUnits(from: text)
+        guard !units.isEmpty else { return nil }
+
+        var unspokenUnits: [String] = []
+        for unit in units {
+            let key = normalizedSpeechUnitKey(unit)
+            guard !key.isEmpty, !spokenTranslationUnitKeys.contains(key) else {
+                continue
+            }
+
+            rememberSpokenTranslationUnitKey(key)
+            unspokenUnits.append(unit)
+        }
+
+        guard !unspokenUnits.isEmpty else { return nil }
+        return unspokenUnits.joined(separator: " ")
+    }
+
+    private func speechUnits(from text: String) -> [String] {
+        var units: [String] = []
+        var currentUnit = ""
+        let terminators = CharacterSet(charactersIn: ".!?。！？\n")
+
+        for scalar in text.unicodeScalars {
+            currentUnit.unicodeScalars.append(scalar)
+            if terminators.contains(scalar) {
+                let unit = speechReadyText(currentUnit)
+                if !unit.isEmpty {
+                    units.append(unit)
+                }
+                currentUnit = ""
+            }
+        }
+
+        let remainingUnit = speechReadyText(currentUnit)
+        if !remainingUnit.isEmpty {
+            units.append(remainingUnit)
+        }
+
+        return units
+    }
+
+    private func normalizedSpeechUnitKey(_ text: String) -> String {
+        let foldedText = text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: targetLanguage.locale)
+        let allowedCharacters = CharacterSet.letters
+            .union(.decimalDigits)
+            .union(.whitespacesAndNewlines)
+        let filteredText = String(foldedText.unicodeScalars.map { scalar in
+            allowedCharacters.contains(scalar) ? Character(scalar) : " "
+        })
+
+        return filteredText
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func rememberSpokenTranslationUnitKey(_ key: String) {
+        spokenTranslationUnitKeys.insert(key)
+        spokenTranslationUnitKeyOrder.append(key)
+
+        while spokenTranslationUnitKeyOrder.count > 160 {
+            let removedKey = spokenTranslationUnitKeyOrder.removeFirst()
+            if !spokenTranslationUnitKeyOrder.contains(removedKey) {
+                spokenTranslationUnitKeys.remove(removedKey)
+            }
+        }
+    }
+
+    private func rememberSpokenTranslationUnits(in text: String) {
+        for unit in speechUnits(from: text) {
+            let key = normalizedSpeechUnitKey(unit)
+            if !key.isEmpty {
+                rememberSpokenTranslationUnitKey(key)
+            }
+        }
+    }
+
+    private func clearSpokenTranslationUnits() {
+        spokenTranslationUnitKeys.removeAll()
+        spokenTranslationUnitKeyOrder.removeAll()
+    }
+
+    private func resetDubbingProgress() {
+        lastSpokenTranslatedText = ""
+        clearSpokenTranslationUnits()
+        stopSpeaking()
+    }
+
+    private func primeDubbingBaselineToCurrentTranslation() {
+        let currentTranslation = speechReadyText(lines.last?.translatedText ?? "")
+        lastSpokenTranslatedText = currentTranslation
+        clearSpokenTranslationUnits()
+        rememberSpokenTranslationUnits(in: currentTranslation)
+    }
+
+    private func stopSpeaking() {
+        speechOutput.stop()
     }
 }
 

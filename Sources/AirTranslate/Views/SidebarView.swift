@@ -2,46 +2,58 @@ import SwiftUI
 
 struct SidebarView: View {
     @Bindable var session: TranslationSessionStore
-    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        Form {
-            Section(AppText.capture) {
-                Button {
-                    session.isRunning ? session.stop() : session.start()
-                } label: {
-                    Label(session.isRunning ? AppText.stop : AppText.start, systemImage: session.isRunning ? "stop.fill" : "play.fill")
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                captureCard
+                sessionCard
+                outputCard
+                libraryCard
 
-                if session.isRunning {
-                    Button {
-                        session.isPaused ? session.resume() : session.pause()
-                    } label: {
-                        Label(
-                            session.isPaused ? AppText.resume : AppText.pause,
-                            systemImage: session.isPaused ? "play.fill" : "pause.fill"
-                        )
+                if session.selectedSavedTranscriptID != nil {
+                    editorCard
+                }
+            }
+            .padding(12)
+        }
+        .background(.bar)
+        .navigationTitle("AirTranslate")
+    }
+
+    private var captureCard: some View {
+        SidebarCard {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .center, spacing: 10) {
+                    Image(systemName: statusSymbolName)
+                        .font(.title3)
+                        .foregroundStyle(statusColor)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(AppText.capture)
+                            .font(.headline)
+                        Text(session.statusMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
                     }
-                    .controlSize(.large)
                 }
 
-                Text(session.statusMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                if session.statusMessage.localizedCaseInsensitiveContains("permission")
-                    || session.statusMessage.localizedCaseInsensitiveContains("권한") {
+                if needsPermissionAction {
                     Button {
                         session.openPrivacySettings()
                     } label: {
                         Label(AppText.openPrivacySettings, systemImage: "gear")
                     }
+                    .controlSize(.small)
                 }
             }
+        }
+    }
 
-            Section(AppText.languages) {
+    private var sessionCard: some View {
+        SidebarCard(title: AppText.session) {
+            VStack(spacing: 10) {
                 Picker(AppText.from, selection: $session.sourceLanguage) {
                     ForEach(LanguageOption.supported) { language in
                         Text(language.localizedTitle).tag(language)
@@ -53,47 +65,43 @@ struct SidebarView: View {
                         Text(language.localizedTitle).tag(language)
                     }
                 }
-            }
 
-            Section(AppText.model) {
+                Divider()
+
                 Picker(AppText.model, selection: $session.selectedModel) {
                     ForEach(IntelligenceModel.allCases) { model in
                         Text(model.title).tag(model)
                     }
                 }
-
-                Text(session.selectedModel.detail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
+        }
+    }
 
-            Section(AppText.output) {
-                Toggle(AppText.dubbing, isOn: $session.isDubbingEnabled)
-
-                Toggle(AppText.transcriptLint, isOn: $session.isTranscriptLintEnabled)
-
-                Text(AppText.transcriptLintDescription)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Button {
-                    openWindow(id: AirTranslateWindowID.floatingCaptions)
-                } label: {
-                    Label(AppText.showFloatingCaptions, systemImage: "macwindow.on.rectangle")
-                }
+    private var outputCard: some View {
+        SidebarCard(title: AppText.liveOutput) {
+            VStack(alignment: .leading, spacing: 12) {
+                Toggle(AppText.transcriptPolish, isOn: $session.isTranscriptLintEnabled)
+                Toggle(AppText.voiceOutput, isOn: $session.isDubbingEnabled)
             }
+        }
+    }
 
-            Section(AppText.savedTranscripts) {
-                Label(AppText.autoSave, systemImage: "checkmark.circle")
+    private var libraryCard: some View {
+        SidebarCard(title: AppText.library) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Label(AppText.autoSave, systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.secondary)
 
-                Text(AppText.autoSaveDescription)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
 
-                Button {
-                    session.openTranscriptsFolder()
-                } label: {
-                    Label(AppText.openSaveFolder, systemImage: "folder")
+                    Button {
+                        session.openTranscriptsFolder()
+                    } label: {
+                        Label(AppText.openLibrary, systemImage: "folder")
+                    }
+                    .labelStyle(.iconOnly)
+                    .help(AppText.openLibrary)
                 }
 
                 if session.savedTranscripts.isEmpty {
@@ -101,47 +109,106 @@ struct SidebarView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(session.savedTranscripts) { transcript in
-                        Button {
-                            session.selectSavedTranscript(transcript.id)
-                        } label: {
-                            SavedTranscriptRow(
-                                transcript: transcript,
-                                isSelected: session.selectedSavedTranscriptID == transcript.id
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-
-            if session.selectedSavedTranscriptID != nil {
-                Section(AppText.editSaved) {
-                    Text(AppText.transcriptText)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    TextEditor(text: $session.savedDraftSourceText)
-                        .font(.caption)
-                        .frame(minHeight: 160)
-
-                    HStack {
-                        Button {
-                            session.saveSelectedTranscriptEdits()
-                        } label: {
-                            Label(AppText.saveEdits, systemImage: "checkmark")
-                        }
-
-                        Button(role: .destructive) {
-                            session.deleteSelectedTranscript()
-                        } label: {
-                            Label(AppText.deleteSavedTranscript, systemImage: "trash")
+                    VStack(spacing: 4) {
+                        ForEach(session.savedTranscripts) { transcript in
+                            Button {
+                                session.selectSavedTranscript(transcript.id)
+                            } label: {
+                                SavedTranscriptRow(
+                                    transcript: transcript,
+                                    isSelected: session.selectedSavedTranscriptID == transcript.id
+                                )
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
             }
         }
-        .formStyle(.grouped)
-        .navigationTitle("AirTranslate")
+    }
+
+    private var editorCard: some View {
+        SidebarCard(title: AppText.editSaved) {
+            VStack(alignment: .leading, spacing: 10) {
+                TextEditor(text: $session.savedDraftSourceText)
+                    .font(.caption)
+                    .frame(minHeight: 150)
+                    .scrollContentBackground(.hidden)
+                    .background(.quaternary.opacity(0.18), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                HStack {
+                    Button {
+                        session.saveSelectedTranscriptEdits()
+                    } label: {
+                        Label(AppText.saveEdits, systemImage: "checkmark")
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Button(role: .destructive) {
+                        session.deleteSelectedTranscript()
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .help(AppText.deleteSavedTranscript)
+                }
+            }
+        }
+    }
+
+    private var needsPermissionAction: Bool {
+        session.statusMessage.localizedCaseInsensitiveContains("permission")
+            || session.statusMessage.localizedCaseInsensitiveContains("권한")
+    }
+
+    private var statusSymbolName: String {
+        if session.isPaused {
+            return "pause.circle.fill"
+        }
+        if session.isRunning {
+            return "waveform.circle.fill"
+        }
+        return "circle.dotted"
+    }
+
+    private var statusColor: Color {
+        if session.isPaused {
+            return .orange
+        }
+        if session.isRunning {
+            return .green
+        }
+        return .secondary
+    }
+}
+
+private struct SidebarCard<Content: View>: View {
+    let title: String?
+    @ViewBuilder let content: Content
+
+    init(title: String? = nil, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let title {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+            }
+
+            content
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.06))
+        }
     }
 }
 
@@ -166,6 +233,7 @@ private struct SavedTranscriptRow: View {
 
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 4)
+        .padding(8)
+        .background(isSelected ? Color.accentColor.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }

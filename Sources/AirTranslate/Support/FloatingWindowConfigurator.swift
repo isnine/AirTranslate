@@ -32,6 +32,30 @@ struct FloatingWindowConfigurator: NSViewRepresentable {
                     )
                 )
             }
+            keepWindowVisible(window)
+        }
+    }
+
+    private func keepWindowVisible(_ window: NSWindow) {
+        guard let visibleFrame = (window.screen ?? NSScreen.main)?.visibleFrame else { return }
+
+        let inset: CGFloat = 16
+        var frame = window.frame
+        let maximumWidth = max(window.minSize.width, visibleFrame.width - inset * 2)
+        let maximumHeight = max(window.minSize.height, visibleFrame.height - inset * 2)
+        frame.size.width = min(max(frame.width, window.minSize.width), maximumWidth)
+        frame.size.height = min(max(frame.height, window.minSize.height), maximumHeight)
+        frame.origin.x = min(
+            max(frame.origin.x, visibleFrame.minX + inset),
+            visibleFrame.maxX - frame.width - inset
+        )
+        frame.origin.y = min(
+            max(frame.origin.y, visibleFrame.minY + inset),
+            visibleFrame.maxY - frame.height - inset
+        )
+
+        if !NSEqualRects(frame, window.frame) {
+            window.setFrame(frame, display: true)
         }
     }
 }

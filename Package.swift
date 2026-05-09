@@ -15,6 +15,8 @@ let package = Package(
             name: "AirTranslate",
             linkerSettings: [
                 .linkedFramework("AVFAudio"),
+                .linkedFramework("AudioToolbox"),
+                .linkedFramework("CoreAudio"),
                 .linkedFramework("ScreenCaptureKit"),
                 .linkedFramework("Speech"),
                 .linkedFramework("Translation")

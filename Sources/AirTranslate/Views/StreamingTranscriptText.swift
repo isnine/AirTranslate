@@ -6,6 +6,9 @@ struct StreamingTranscriptText: View {
     var foregroundColor = Color.primary
     var isTextSelectionEnabled = true
     var lineLimit: Int?
+    var textAlignment: TextAlignment = .leading
+    var frameAlignment: Alignment = .topLeading
+    var truncationMode: Text.TruncationMode = .head
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -41,9 +44,10 @@ struct StreamingTranscriptText: View {
             .font(font)
             .foregroundStyle(foregroundColor)
             .lineLimit(lineLimit)
-            .truncationMode(.head)
+            .multilineTextAlignment(textAlignment)
+            .truncationMode(truncationMode)
             .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: frameAlignment)
     }
 
     private var renderedText: AttributedString {

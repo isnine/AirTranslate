@@ -23,12 +23,19 @@ enum AppText {
     static let to = localized(english: "To", korean: "번역")
     static let model = localized(english: "Model", korean: "모델")
     static let output = localized(english: "Output", korean: "출력")
+    static let session = localized(english: "Session", korean: "세션")
+    static let liveOutput = localized(english: "Live Output", korean: "실시간 출력")
+    static let library = localized(english: "Library", korean: "저장소")
     static let dubbing = localized(english: "Dubbing", korean: "더빙")
+    static let voiceOutput = localized(english: "Voice Output", korean: "음성 출력")
     static let menuBarTitle = localized(english: "Captions", korean: "자막")
-    static let menuBarRunningTitle = localized(english: "Live", korean: "전사중")
+    static let menuBarRunningTitle = localized(english: "Live", korean: "기록 중")
     static let menuBarPausedTitle = localized(english: "Paused", korean: "일시정지")
     static let floatingCaptions = localized(english: "Floating Captions", korean: "플로팅 자막")
     static let showFloatingCaptions = localized(english: "Show Floating Captions", korean: "플로팅 자막 보기")
+    static let floatingCaptionPowerOn = localized(english: "ON", korean: "켜짐")
+    static let floatingCaptionPowerOff = localized(english: "OFF", korean: "꺼짐")
+    static let captionsWindow = localized(english: "Caption Window", korean: "자막 창")
     static let hideFloatingCaptions = localized(english: "Hide Floating Captions", korean: "플로팅 자막 숨기기")
     static let openMainWindow = localized(english: "Open Main Window", korean: "메인 창 열기")
     static let floatingDisplay = localized(english: "Floating Display", korean: "플로팅 표시")
@@ -49,24 +56,29 @@ enum AppText {
         english: "Live captions will appear here.",
         korean: "실시간 자막이 여기에 표시됩니다."
     )
-    static let transcriptLint = localized(english: "Transcript Word Lint", korean: "전사 단어 린트")
+    static let transcriptLint = localized(english: "Transcript Word Lint", korean: "기록 단어 다듬기")
+    static let transcriptPolish = localized(english: "Transcript Polish", korean: "기록 다듬기")
     static let transcriptLintDescription = localized(
         english: "During silence, conservatively fixes transcription words when macOS spelling suggestions are confident. It does not remove repeated sentences or transcript content.",
-        korean: "침묵 시간에 macOS 맞춤법 후보가 확실한 전사 단어만 보수적으로 고칩니다. 반복 문장이나 전사 내용은 제거하지 않습니다."
+        korean: "침묵 시간에 macOS 맞춤법 후보가 확실한 기록 단어만 보수적으로 고칩니다. 반복 문장이나 기록 내용은 제거하지 않습니다."
     )
-    static let savedTranscripts = localized(english: "Saved Transcripts", korean: "저장된 전사")
+    static let savedTranscripts = localized(english: "Saved Transcripts", korean: "저장된 기록")
     static let autoSave = localized(english: "Auto-save", korean: "자동 저장")
     static let autoSaveDescription = localized(
         english: "Transcript text is kept in memory while listening, then saved as a dated plain .txt file with a short content title when capture stops or the app quits.",
-        korean: "전사 중에는 메모리에 유지하고, 캡처 중지 또는 앱 종료 직전에 날짜와 짧은 내용 제목이 들어간 일반 .txt 파일로 저장됩니다."
+        korean: "기록 중에는 메모리에 유지하고, 캡처 중지 또는 앱 종료 직전에 날짜와 짧은 내용 제목이 들어간 일반 .txt 파일로 저장됩니다."
     )
     static let openSaveFolder = localized(
         english: "Open Save Folder",
         korean: "저장 폴더 열기"
     )
+    static let openLibrary = localized(
+        english: "Open Library",
+        korean: "저장소 열기"
+    )
     static let savedEmpty = localized(
         english: "Auto-saved transcripts will appear here.",
-        korean: "자동 저장된 전사가 여기에 표시됩니다."
+        korean: "자동 저장된 기록이 여기에 표시됩니다."
     )
     static let editSaved = localized(english: "Edit Saved", korean: "저장본 편집")
     static let title = localized(english: "Title", korean: "제목")
@@ -75,18 +87,19 @@ enum AppText {
         english: "Incoming speech with live paragraph cleanup.",
         korean: "들어오는 음성을 실시간 문단 정리와 함께 보여줍니다."
     )
-    static let transcriptText = localized(english: "Transcript Text", korean: "전사 텍스트")
-    static let deleteSavedTranscript = localized(english: "Delete Transcript", korean: "전사 삭제")
+    static let transcriptText = localized(english: "Transcript Text", korean: "기록 텍스트")
+    static let deleteSavedTranscript = localized(english: "Delete Transcript", korean: "기록 삭제")
     static let translation = localized(english: "Translation", korean: "번역")
     static let translationDescription = localized(
         english: "Translated output aligned to the same transcript flow.",
-        korean: "같은 전사 흐름에 맞춰 번역 결과를 정렬해 보여줍니다."
+        korean: "같은 기록 흐름에 맞춰 번역 결과를 정렬해 보여줍니다."
     )
     static let saveEdits = localized(english: "Save Edits", korean: "수정 저장")
-    static let liveCaptions = localized(english: "Live Captions", korean: "실시간 전사")
+    static let liveCaptions = localized(english: "Live Captions", korean: "실시간 기록")
+    static let transcriptWorkspace = localized(english: "Transcript Workspace", korean: "실시간 기록")
     static let listening = localized(english: "Listening", korean: "듣는 중")
     static let idle = localized(english: "Idle", korean: "대기")
-    static let noCaptionsYet = localized(english: "No captions yet", korean: "아직 전사 없음")
+    static let noCaptionsYet = localized(english: "No captions yet", korean: "아직 기록 없음")
     static let noCaptionsDescription = localized(
         english: "Start capture, play audio on this Mac, and grant Screen Recording, System Audio Recording, and Speech permissions.",
         korean: "캡처를 시작하고 이 Mac에서 오디오를 재생한 뒤 화면 기록, 시스템 오디오 녹음, 음성 인식 권한을 허용하세요."
@@ -117,7 +130,7 @@ enum AppText {
         korean: "Mac 오디오를 듣는 중, 음성을 기다리는 중..."
     )
     static let translating = localized(english: "Translating...", korean: "번역 중...")
-    static let untitledTranscript = localized(english: "Untitled Transcript", korean: "제목 없는 전사")
+    static let untitledTranscript = localized(english: "Untitled Transcript", korean: "제목 없는 기록")
 
     static func languageSummary(source: String, target: String) -> String {
         localized(english: "\(source) to \(target)", korean: "\(source) → \(target)")
@@ -134,7 +147,7 @@ enum AppText {
     static func saveLibraryFailed(_ message: String) -> String {
         localized(
             english: "Could not save transcript library: \(message)",
-            korean: "전사 저장소를 저장할 수 없습니다: \(message)"
+            korean: "기록 저장소를 저장할 수 없습니다: \(message)"
         )
     }
 
@@ -155,7 +168,7 @@ enum AppText {
     static func receivingAudioTranscribing(sampleCount: Int, level: Int) -> String {
         localized(
             english: "Receiving Mac audio (\(sampleCount) samples, \(level) dB), transcribing live...",
-            korean: "Mac 오디오 수신 중(\(sampleCount) 샘플, \(level) dB), 실시간 전사 중..."
+            korean: "Mac 오디오 수신 중(\(sampleCount) 샘플, \(level) dB), 실시간 기록 중..."
         )
     }
 

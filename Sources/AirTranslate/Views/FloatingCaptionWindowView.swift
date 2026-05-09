@@ -78,9 +78,13 @@ struct FloatingCaptionWindowView: View {
             font: font,
             foregroundColor: .white,
             isTextSelectionEnabled: false,
-            lineLimit: lineLimit
+            lineLimit: lineLimit,
+            textAlignment: .center,
+            frameAlignment: .center,
+            truncationMode: .tail
         )
         .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity, alignment: .center)
         .lineSpacing(5)
         .shadow(color: .black.opacity(0.95), radius: 3, x: 0, y: 1)
         .shadow(color: .black.opacity(0.65), radius: 8, x: 0, y: 2)

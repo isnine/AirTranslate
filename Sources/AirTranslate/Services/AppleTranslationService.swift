@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 final class AppleTranslationService {
     private let availability = LanguageAvailability()
+    private var sessionsByLanguagePair: [String: TranslationSession] = [:]
 
     func translate(
         _ text: String,
@@ -22,13 +23,35 @@ final class AppleTranslationService {
             throw TranslationServiceError.unsupportedPair(source.localizedTitle, target.localizedTitle)
         }
 
-        let session = TranslationSession(installedSource: sourceLanguage, target: targetLanguage)
+        let session = translationSession(
+            source: sourceLanguage,
+            target: targetLanguage,
+            cacheKey: languagePairKey(source: source, target: target)
+        )
         if !(await session.isReady) {
             try await session.prepareTranslation()
         }
 
         let response = try await session.translate(text)
         return response.targetText
+    }
+
+    private func languagePairKey(source: LanguageOption, target: LanguageOption) -> String {
+        "\(source.id)->\(target.id)"
+    }
+
+    private func translationSession(
+        source: Locale.Language,
+        target: Locale.Language,
+        cacheKey: String
+    ) -> TranslationSession {
+        if let session = sessionsByLanguagePair[cacheKey] {
+            return session
+        }
+
+        let session = TranslationSession(installedSource: source, target: target)
+        sessionsByLanguagePair[cacheKey] = session
+        return session
     }
 }
 

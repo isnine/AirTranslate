@@ -14,7 +14,7 @@ enum IntelligenceModel: String, CaseIterable, Identifiable {
         case .appleOnDevice:
             AppText.localized(english: "Apple On-Device", korean: "Apple 온디바이스")
         case .appleSpeechOnly:
-            AppText.localized(english: "Speech Captions", korean: "음성 전사")
+            AppText.localized(english: "Speech Captions", korean: "음성 기록")
         }
     }
 
@@ -33,7 +33,7 @@ enum IntelligenceModel: String, CaseIterable, Identifiable {
         case .appleSpeechOnly:
             AppText.localized(
                 english: "Transcribes without translating.",
-                korean: "번역 없이 전사만 수행합니다."
+                korean: "번역 없이 기록만 수행합니다."
             )
         }
     }
