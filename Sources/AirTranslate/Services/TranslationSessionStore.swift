@@ -900,6 +900,10 @@ final class TranslationSessionStore {
             return ""
         }
 
+        if replaceCommittedTailIfRevision(with: incoming) {
+            return ""
+        }
+
         if let tail = incomingTailAfterCommittedText(incoming) {
             return tail
         }
@@ -1014,12 +1018,76 @@ final class TranslationSessionStore {
 
         if committedSourceText.isEmpty {
             committedSourceText = partial
+        } else if replaceCommittedTailIfRevision(with: partial) {
+            // The speech recognizer can resend the last phrase with better wording after
+            // paragraph cleanup. Treat that as a replacement, not a new paragraph.
         } else if shouldAppendCommittedPartial(partial) {
             let separator = pendingParagraphBreakBeforePartial ? "\n\n" : "\n"
             committedSourceText += separator + partial
         }
         pendingParagraphBreakBeforePartial = false
         currentPartialText = ""
+    }
+
+    private func replaceCommittedTailIfRevision(with text: String) -> Bool {
+        let revisedParagraph = organizeTranscript(text, language: sourceLanguage)
+        guard !revisedParagraph.isEmpty else { return false }
+
+        var paragraphs = paragraphParts(from: committedSourceText)
+        guard let lastParagraph = paragraphs.last,
+              isLikelyRevision(revisedParagraph, of: lastParagraph)
+        else {
+            return false
+        }
+
+        paragraphs[paragraphs.count - 1] = revisedParagraph
+        committedSourceText = paragraphs.joined(separator: "\n\n")
+        return true
+    }
+
+    private func isLikelyRevision(_ incoming: String, of existing: String) -> Bool {
+        let normalizedIncoming = normalizedTranscriptForComparison(incoming)
+        let normalizedExisting = normalizedTranscriptForComparison(existing)
+        guard normalizedIncoming != normalizedExisting,
+              normalizedIncoming.count >= 12,
+              normalizedExisting.count >= 12
+        else {
+            return false
+        }
+
+        let sharedPrefixLength = commonPrefixLength(normalizedIncoming, normalizedExisting)
+        let shorterLength = min(normalizedIncoming.count, normalizedExisting.count)
+        if sharedPrefixLength >= 24 || sharedPrefixLength * 2 >= shorterLength {
+            return true
+        }
+
+        return sharedPrefixLength >= 8
+            && tokenOverlapRatio(normalizedIncoming, normalizedExisting) >= 0.58
+    }
+
+    private func tokenOverlapRatio(_ lhs: String, _ rhs: String) -> Double {
+        let lhsTokens = Set(transcriptTokens(from: lhs))
+        let rhsTokens = Set(transcriptTokens(from: rhs))
+        let smallerCount = min(lhsTokens.count, rhsTokens.count)
+        guard smallerCount > 0 else { return 0 }
+
+        let overlapCount = lhsTokens.intersection(rhsTokens).count
+        return Double(overlapCount) / Double(smallerCount)
+    }
+
+    private func transcriptTokens(from text: String) -> [String] {
+        let allowedCharacters = CharacterSet.letters
+            .union(.decimalDigits)
+            .union(.whitespacesAndNewlines)
+        let filteredText = String(text.unicodeScalars.map { scalar in
+            allowedCharacters.contains(scalar) ? Character(scalar) : " "
+        })
+
+        return filteredText
+            .lowercased()
+            .split(separator: " ")
+            .map(String.init)
+            .filter { $0.count > 1 }
     }
 
     private func committedTextAlreadyContains(_ text: String) -> Bool {
