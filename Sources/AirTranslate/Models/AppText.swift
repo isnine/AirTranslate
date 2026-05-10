@@ -51,6 +51,10 @@ enum AppText {
     )
     static let output = localized(english: "Output", korean: "출력")
     static let translationSettings = localized(english: "Translation Settings", korean: "번역 설정")
+    static let configureTranslationSettings = localized(
+        english: "Configure Translation Settings",
+        korean: "번역 설정 구성"
+    )
     static let transcript = localized(english: "Transcript", korean: "기록")
     static let liveOutput = localized(english: "Live Output", korean: "실시간 출력")
     static let library = localized(english: "Library", korean: "저장소")

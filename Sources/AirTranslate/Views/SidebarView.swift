@@ -4,13 +4,13 @@ import SwiftUI
 struct SidebarView: View {
     @Bindable var session: TranslationSessionStore
     @State private var isLibraryPresented = false
+    @State private var isConfigurationExpanded = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 brandHeader
                 sessionCard
-                outputCard
                 libraryCard
             }
             .padding(12)
@@ -70,7 +70,12 @@ struct SidebarView: View {
     }
 
     private var sessionCard: some View {
-        SidebarCard(title: AppText.translationSettings) {
+        SidebarCard(
+            title: AppText.translationSettings,
+            headerAccessory: {
+                expandConfigurationButton
+            }
+        ) {
             VStack(spacing: 10) {
                 HStack(spacing: 6) {
                     CompactLanguagePicker(title: AppText.from, selection: $session.sourceLanguage)
@@ -87,64 +92,146 @@ struct SidebarView: View {
 
                 Divider()
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(AppText.model)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(IntelligenceModel.allCases) { model in
-                            Button {
-                                session.selectedModel = model
-                            } label: {
-                                ModelModeRow(
-                                    model: model,
-                                    isSelected: session.selectedModel == model
-                                )
-                            }
-                            .buttonStyle(.plain)
-                            .help(model.detail)
-                        }
+                Button {
+                    withAnimation(.spring(response: 0.24, dampingFraction: 0.86)) {
+                        isConfigurationExpanded.toggle()
                     }
+                } label: {
+                    ConfigurationSummaryRow(
+                        modelTitle: session.selectedModel.title,
+                        outputTitle: outputSummary,
+                        isExpanded: isConfigurationExpanded
+                    )
+                }
+                .buttonStyle(.plain)
+                .help(AppText.configureTranslationSettings)
+                .accessibilityLabel(AppText.configureTranslationSettings)
+                .accessibilityValue(isConfigurationExpanded ? AppText.localized(english: "Expanded", korean: "펼쳐짐") : AppText.localized(english: "Collapsed", korean: "접힘"))
 
-                    Text(AppText.requiredAssets)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .padding(.top, 2)
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        AssetAvailabilityRow(
-                            title: AppText.speechLanguagePack,
-                            availability: session.modelAvailability(for: .appleSpeechOnly),
-                            helpText: "\(IntelligenceModel.appleSpeechOnly.detail)\n\(session.modelAvailability(for: .appleSpeechOnly).detail)"
-                        ) {
-                            session.downloadModelAssets(for: .appleSpeechOnly)
-                        }
-
-                        if session.selectedModel == .appleSystem {
-                            AssetAvailabilityRow(
-                                title: AppText.translationLanguagePack,
-                                availability: session.modelAvailability(for: .appleOnDevice),
-                                helpText: "\(IntelligenceModel.appleOnDevice.detail)\n\(session.modelAvailability(for: .appleOnDevice).detail)"
-                            ) {
-                                session.downloadModelAssets(for: .appleOnDevice)
-                            }
-                        }
-                    }
+                if isConfigurationExpanded {
+                    inlineConfigurationControls
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
         }
         .onAppear {
+            isConfigurationExpanded = false
             session.refreshModelAvailability()
         }
     }
 
-    private var outputCard: some View {
-        SidebarCard(title: AppText.liveOutput) {
-            VStack(alignment: .leading, spacing: 12) {
-                Toggle(AppText.transcriptPolish, isOn: $session.isTranscriptLintEnabled)
-                Toggle(AppText.voiceOutput, isOn: $session.isDubbingEnabled)
+    private var expandConfigurationButton: some View {
+        Button {
+            withAnimation(.spring(response: 0.24, dampingFraction: 0.86)) {
+                isConfigurationExpanded.toggle()
             }
+        } label: {
+            Image(systemName: "gearshape.fill")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(isConfigurationExpanded ? Color.white : Color.accentColor)
+                .frame(width: 26, height: 26)
+                .background(isConfigurationExpanded ? Color.accentColor : Color.accentColor.opacity(0.13), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(Color.accentColor.opacity(0.22), lineWidth: 1)
+                }
+        }
+        .buttonStyle(.plain)
+        .help(AppText.configureTranslationSettings)
+        .accessibilityLabel(AppText.configureTranslationSettings)
+    }
+
+    private var inlineConfigurationControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            InlineSettingsGroup(
+                systemImage: "cpu",
+                title: AppText.model
+            ) {
+                VStack(spacing: 6) {
+                    ForEach(IntelligenceModel.allCases) { model in
+                        Button {
+                            session.selectedModel = model
+                        } label: {
+                            ModelModeRow(
+                                model: model,
+                                isSelected: session.selectedModel == model
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .help(model.detail)
+                    }
+                }
+            }
+
+            InlineSettingsGroup(
+                systemImage: "externaldrive.badge.checkmark",
+                title: AppText.requiredAssets
+            ) {
+                VStack(spacing: 6) {
+                    AssetAvailabilityRow(
+                        title: AppText.speechLanguagePack,
+                        availability: session.modelAvailability(for: .appleSpeechOnly),
+                        helpText: "\(IntelligenceModel.appleSpeechOnly.detail)\n\(session.modelAvailability(for: .appleSpeechOnly).detail)"
+                    ) {
+                        session.downloadModelAssets(for: .appleSpeechOnly)
+                    }
+
+                    if session.selectedModel == .appleSystem {
+                        AssetAvailabilityRow(
+                            title: AppText.translationLanguagePack,
+                            availability: session.modelAvailability(for: .appleOnDevice),
+                            helpText: "\(IntelligenceModel.appleOnDevice.detail)\n\(session.modelAvailability(for: .appleOnDevice).detail)"
+                        ) {
+                            session.downloadModelAssets(for: .appleOnDevice)
+                        }
+                    }
+                }
+            }
+
+            InlineSettingsGroup(
+                systemImage: "waveform.and.person.filled",
+                title: AppText.liveOutput
+            ) {
+                VStack(spacing: 6) {
+                    CompactToggleRow(
+                        title: AppText.transcriptPolish,
+                        systemImage: "text.badge.checkmark",
+                        isOn: $session.isTranscriptLintEnabled
+                    )
+                    .help(AppText.transcriptLintDescription)
+
+                    CompactToggleRow(
+                        title: AppText.voiceOutput,
+                        systemImage: "speaker.wave.2.fill",
+                        isOn: $session.isDubbingEnabled
+                    )
+                }
+            }
+        }
+    }
+
+    private var outputSummary: String {
+        switch (session.isTranscriptLintEnabled, session.isDubbingEnabled) {
+        case (true, true):
+            AppText.localized(
+                english: "Polish + Voice",
+                korean: "다듬기+음성"
+            )
+        case (true, false):
+            AppText.localized(
+                english: "Polish",
+                korean: "다듬기"
+            )
+        case (false, true):
+            AppText.localized(
+                english: "Voice",
+                korean: "음성"
+            )
+        case (false, false):
+            AppText.localized(
+                english: "Transcript only",
+                korean: "기록만"
+            )
         }
     }
 
@@ -189,6 +276,115 @@ struct SidebarView: View {
             return .green
         }
         return .secondary
+    }
+}
+
+private struct ConfigurationSummaryRow: View {
+    let modelTitle: String
+    let outputTitle: String
+    let isExpanded: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "slider.horizontal.3")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 30, height: 30)
+                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(AppText.localized(english: "Session Options", korean: "세부 설정"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+
+                Text(modelTitle)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+            }
+
+            Spacer(minLength: 6)
+
+            Text(outputTitle)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(Color.accentColor)
+                .lineLimit(1)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .background(Color.accentColor.opacity(0.12), in: Capsule())
+
+            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 14)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+    }
+}
+
+private struct InlineSettingsGroup<Content: View>: View {
+    let systemImage: String
+    let title: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 9) {
+                Image(systemName: systemImage)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16, height: 16)
+
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                Spacer(minLength: 0)
+            }
+
+            content
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.055), lineWidth: 1)
+        }
+    }
+}
+
+private struct CompactToggleRow: View {
+    let title: String
+    let systemImage: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Toggle(isOn: $isOn) {
+            HStack(spacing: 8) {
+                Image(systemName: systemImage)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(isOn ? Color.accentColor : Color.secondary)
+                    .frame(width: 16)
+
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+            }
+        }
+        .toggleStyle(.switch)
+        .accessibilityLabel(title)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
@@ -280,11 +476,11 @@ private struct ModelModeRow: View {
     let isSelected: Bool
 
     var body: some View {
-        HStack(alignment: .center, spacing: 8) {
+        HStack(alignment: .center, spacing: 10) {
             Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                .font(.caption)
-                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary.opacity(0.5))
-                .frame(width: 14, height: 14)
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary.opacity(0.55))
+                .frame(width: 18, height: 18)
 
             Text(model.title)
                 .font(.caption.weight(.semibold))
@@ -297,6 +493,14 @@ private struct ModelModeRow: View {
 
             Spacer(minLength: 0)
         }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background((isSelected ? Color.accentColor : Color.primary).opacity(isSelected ? 0.11 : 0.045), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .strokeBorder((isSelected ? Color.accentColor : Color.primary).opacity(isSelected ? 0.24 : 0.06), lineWidth: 1)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
     }
 }
 
@@ -307,25 +511,34 @@ private struct AssetAvailabilityRow: View {
     let download: () -> Void
 
     var body: some View {
-        HStack(alignment: .center, spacing: 8) {
+        HStack(alignment: .center, spacing: 10) {
             Image(systemName: assetSymbolName)
-                .font(.caption)
+                .font(.callout.weight(.semibold))
                 .foregroundStyle(availabilityColor)
-                .frame(width: 14, height: 14)
+                .frame(width: 28, height: 28)
+                .background(availabilityColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
 
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
 
-            Image(systemName: "info.circle")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .help(helpText)
+                Text(availability.detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
 
             Spacer(minLength: 4)
 
             trailingStatus
+        }
+        .padding(10)
+        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
         }
         .help(helpText)
     }
@@ -342,6 +555,7 @@ private struct AssetAvailabilityRow: View {
             } label: {
                 Label(AppText.download, systemImage: "arrow.down.circle")
                     .labelStyle(.iconOnly)
+                    .font(.title3)
             }
             .buttonStyle(.borderless)
             .foregroundStyle(availabilityColor)
@@ -351,6 +565,9 @@ private struct AssetAvailabilityRow: View {
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(availabilityColor)
                 .lineLimit(1)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .background(availabilityColor.opacity(0.12), in: Capsule())
         }
     }
 
@@ -383,22 +600,40 @@ private struct AssetAvailabilityRow: View {
     }
 }
 
-private struct SidebarCard<Content: View>: View {
+private struct SidebarCard<Content: View, HeaderAccessory: View>: View {
     let title: String?
+    @ViewBuilder let headerAccessory: HeaderAccessory
     @ViewBuilder let content: Content
 
-    init(title: String? = nil, @ViewBuilder content: () -> Content) {
+    init(title: String? = nil, @ViewBuilder content: () -> Content) where HeaderAccessory == EmptyView {
         self.title = title
+        self.headerAccessory = EmptyView()
+        self.content = content()
+    }
+
+    init(
+        title: String? = nil,
+        @ViewBuilder headerAccessory: () -> HeaderAccessory,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.headerAccessory = headerAccessory()
         self.content = content()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let title {
-                Text(title)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
+                HStack(spacing: 8) {
+                    Text(title)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .textCase(.uppercase)
+
+                    Spacer(minLength: 0)
+
+                    headerAccessory
+                }
             }
 
             content
