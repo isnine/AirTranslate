@@ -6,7 +6,8 @@ extension String {
         let trimmedText = trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return "" }
         let maxCharacters = maxLines * 72
-        let scanText = String(trimmedText.boundedSuffix(maxCharacters: maxCharacters * 3))
+        let captionText = trimmedText.floatingCaptionSentenceBreaks()
+        let scanText = String(captionText.boundedSuffix(maxCharacters: maxCharacters * 3))
 
         let logicalLines = scanText
             .components(separatedBy: .newlines)
@@ -34,5 +35,13 @@ extension String {
         }
 
         return self[start..<endIndex]
+    }
+
+    private func floatingCaptionSentenceBreaks() -> String {
+        replacingOccurrences(
+            of: #"(?<!\d)\.\s+(?=\S)"#,
+            with: ".\n",
+            options: .regularExpression
+        )
     }
 }

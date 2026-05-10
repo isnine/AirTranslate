@@ -29,26 +29,32 @@ struct FloatingCaptionWindowView: View {
     private var content: some View {
         switch session.floatingCaptionDisplayMode {
         case .original:
-            subtitleText(session.floatingSourceText, font: session.floatingCaptionTextSize.primaryFont)
+            subtitleText(sourceText, font: session.floatingCaptionTextSize.primaryFont)
         case .originalAndTranslation:
-            if !session.floatingSourceText.isEmpty {
-                subtitleText(session.floatingSourceText, font: session.floatingCaptionTextSize.secondaryFont)
+            if !sourceText.isEmpty {
+                subtitleText(sourceText, font: session.floatingCaptionTextSize.secondaryFont)
                     .opacity(0.82)
+                subtitleText(translationText.isEmpty ? " " : translationText, font: session.floatingCaptionTextSize.primaryFont)
+                    .opacity(translationText.isEmpty ? 0 : 1)
             }
-            subtitleText(translationText, font: session.floatingCaptionTextSize.primaryFont)
+            if sourceText.isEmpty && translationText.isEmpty {
+                subtitleText(AppText.noFloatingCaptionsYet, font: session.floatingCaptionTextSize.primaryFont)
+            }
         case .translation:
-            subtitleText(translationText, font: session.floatingCaptionTextSize.primaryFont)
+            if !translationText.isEmpty {
+                subtitleText(translationText, font: session.floatingCaptionTextSize.primaryFont)
+            } else if sourceText.isEmpty {
+                subtitleText(AppText.noFloatingCaptionsYet, font: session.floatingCaptionTextSize.primaryFont)
+            }
         }
     }
 
+    private var sourceText: String {
+        session.floatingSourceText
+    }
+
     private var translationText: String {
-        if !session.floatingTranslationText.isEmpty {
-            return session.floatingTranslationText
-        }
-        if !session.floatingSourceText.isEmpty {
-            return AppText.translating
-        }
-        return AppText.noFloatingCaptionsYet
+        session.floatingTranslationText
     }
 
     private var lineLimit: Int {

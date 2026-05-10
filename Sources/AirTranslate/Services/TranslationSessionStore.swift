@@ -28,6 +28,10 @@ private struct TranslationRequest {
 final class TranslationSessionStore {
     private static let maxTranslationCacheEntries = 2_000
     private static let committedRevisionSearchLimit = 2
+    private static let floatingCaptionEarlyRevisionWindow = 0.45
+    private static let floatingCaptionImmediateExtensionCharacterLimit = 28
+    private static let minimumFloatingCaptionDwell = 1.4
+    private static let maximumFloatingCaptionDwell = 3.6
 
     var isRunning = false
     var isPaused = false
@@ -117,6 +121,16 @@ final class TranslationSessionStore {
     private var committedSourceText = ""
     private var currentPartialText = ""
     private var pendingParagraphBreakBeforePartial = false
+    private var floatingCommittedSourceText = ""
+    private var floatingCurrentPartialText = ""
+    private var pendingFloatingParagraphBreakBeforePartial = false
+    private var floatingPresentedSourceText = ""
+    private var floatingQueuedSourceText = ""
+    private var floatingPresentedAt = Date.distantPast
+    private var floatingDisplayTranslationText = ""
+    private var floatingQueuedTranslationText = ""
+    private var floatingQueuedTranslationSourceText = ""
+    private var floatingPresentationTask: Task<Void, Never>?
     private var pendingTranslationSourceText = ""
     private var translatedSegmentsBySource: [String: String] = [:]
     private var translationCacheKeyOrder: [String] = []
@@ -286,17 +300,37 @@ final class TranslationSessionStore {
     }
 
     var floatingSourceText: String {
-        floatingCaptionText(from: lines.last?.sourceText)
+        let displayText = floatingPresentedSourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !displayText.isEmpty {
+            return floatingCaptionText(from: displayText)
+        }
+
+        let liveDisplayText = floatingVisibleSourceTranscript()
+        if !liveDisplayText.isEmpty {
+            return floatingCaptionText(from: liveDisplayText)
+        }
+
+        return floatingCaptionText(from: lines.last?.sourceText)
     }
 
     var floatingTranslationText: String {
-        guard let translatedText = lines.last?.translatedText.trimmingCharacters(in: .whitespacesAndNewlines),
-              translatedText != AppText.translating
+        let displaySourceText = floatingPresentedSourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !displaySourceText.isEmpty {
+            let translatedText = floatingDisplayTranslationText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !translatedText.isEmpty, translatedText != AppText.translating else {
+                return ""
+            }
+
+            return floatingCaptionText(from: translatedText)
+        }
+
+        guard let lineTranslatedText = lines.last?.translatedText.trimmingCharacters(in: .whitespacesAndNewlines),
+              lineTranslatedText != AppText.translating
         else {
             return ""
         }
 
-        return floatingCaptionText(from: translatedText)
+        return floatingCaptionText(from: lineTranslatedText)
     }
 
     var hasFloatingCaptionContent: Bool {
@@ -408,6 +442,21 @@ final class TranslationSessionStore {
         committedSourceText = ""
         currentPartialText = ""
         pendingParagraphBreakBeforePartial = false
+        floatingPresentationTask?.cancel()
+        floatingPresentationTask = nil
+        if clearsVisibleLines {
+            floatingCommittedSourceText = ""
+            floatingCurrentPartialText = ""
+            pendingFloatingParagraphBreakBeforePartial = false
+            floatingPresentedSourceText = ""
+            floatingQueuedSourceText = ""
+            floatingPresentedAt = Date.distantPast
+            floatingDisplayTranslationText = ""
+            floatingQueuedTranslationText = ""
+            floatingQueuedTranslationSourceText = ""
+        } else {
+            rehydrateFloatingCaptionDisplayFromCurrentLine()
+        }
         pendingTranslationSourceText = ""
         latestTranslationRequest = nil
         translationBurstStartedAt = Date.distantPast
@@ -880,6 +929,7 @@ final class TranslationSessionStore {
         if hadLongSilence, !currentPartialText.isEmpty {
             commitCurrentPartial()
             pendingParagraphBreakBeforePartial = !committedSourceText.isEmpty
+            pendingFloatingParagraphBreakBeforePartial = !floatingCommittedSourceText.isEmpty
         }
 
         let incomingPartial = uncommittedIncomingText(
@@ -891,21 +941,25 @@ final class TranslationSessionStore {
 
         if currentPartialText.isEmpty {
             currentPartialText = incomingPartial
+            setFloatingCurrentPartialText(incomingPartial)
             return visibleTranscript()
         }
 
         if isRevisionOfCurrentPartial(incomingPartial) {
             currentPartialText = preferredPartialText(current: currentPartialText, incoming: incomingPartial)
+            setFloatingCurrentPartialText(currentPartialText)
             return visibleTranscript()
         }
 
         commitCurrentPartial()
         pendingParagraphBreakBeforePartial = hadLongSilence && !committedSourceText.isEmpty
+        pendingFloatingParagraphBreakBeforePartial = hadLongSilence && !floatingCommittedSourceText.isEmpty
         currentPartialText = uncommittedIncomingText(
             from: trimmedIncoming,
             allowsCommittedRevision: true,
             allowsCommittedReplay: true
         )
+        setFloatingCurrentPartialText(currentPartialText)
         return visibleTranscript()
     }
 
@@ -920,6 +974,7 @@ final class TranslationSessionStore {
 
         if allowsCommittedRevision,
            replaceCommittedUnitsIfRevision(with: incoming, allowsBackfill: true) {
+            syncFloatingCommittedSourceTextToCommittedSourceText()
             return ""
         }
 
@@ -1046,17 +1101,192 @@ final class TranslationSessionStore {
         let partial = organizeTranscript(currentPartialText, language: sourceLanguage)
         guard !partial.isEmpty else { return }
 
+        var didAppendCommittedPartial = false
+        var didReplaceCommittedPartial = false
         if committedSourceText.isEmpty {
             committedSourceText = partial
+            didAppendCommittedPartial = true
         } else if replaceCommittedUnitsIfRevision(with: partial, allowsBackfill: false) {
             // The speech recognizer can resend the last phrase with better wording after
             // cleanup. Treat that as a replacement, not a new line.
+            didReplaceCommittedPartial = true
         } else if shouldAppendCommittedPartial(partial) {
             let separator = pendingParagraphBreakBeforePartial ? "\n\n" : "\n"
             committedSourceText += separator + partial
+            didAppendCommittedPartial = true
         }
         pendingParagraphBreakBeforePartial = false
         currentPartialText = ""
+
+        if didAppendCommittedPartial {
+            commitFloatingCurrentPartial()
+        } else if didReplaceCommittedPartial {
+            syncFloatingCommittedSourceTextToCommittedSourceText(keepsCurrentPartial: false)
+        } else {
+            discardFloatingCurrentPartial()
+        }
+    }
+
+    private func commitFloatingCurrentPartial() {
+        let partial = floatingCurrentPartialText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !partial.isEmpty else { return }
+
+        if floatingCommittedSourceText.isEmpty {
+            floatingCommittedSourceText = partial
+        } else if shouldAppendCommittedPartial(partial, to: floatingCommittedSourceText) {
+            let separator = pendingFloatingParagraphBreakBeforePartial ? "\n\n" : "\n"
+            floatingCommittedSourceText += separator + partial
+        }
+        pendingFloatingParagraphBreakBeforePartial = false
+        floatingCurrentPartialText = ""
+        refreshFloatingCaptionPresentation()
+    }
+
+    private func setFloatingCurrentPartialText(_ text: String) {
+        floatingCurrentPartialText = text
+        refreshFloatingCaptionPresentation()
+    }
+
+    private func syncFloatingCommittedSourceTextToCommittedSourceText(keepsCurrentPartial: Bool = true) {
+        floatingCommittedSourceText = committedSourceText
+        if !keepsCurrentPartial {
+            floatingCurrentPartialText = ""
+            pendingFloatingParagraphBreakBeforePartial = false
+        }
+        refreshFloatingCaptionPresentation()
+    }
+
+    private func discardFloatingCurrentPartial() {
+        floatingCurrentPartialText = ""
+        pendingFloatingParagraphBreakBeforePartial = false
+        refreshFloatingCaptionPresentation()
+    }
+
+    private func rehydrateFloatingCaptionDisplayFromCurrentLine() {
+        guard let line = lines.last else {
+            floatingCommittedSourceText = ""
+            floatingCurrentPartialText = ""
+            pendingFloatingParagraphBreakBeforePartial = false
+            floatingPresentedSourceText = ""
+            floatingQueuedSourceText = ""
+            floatingPresentedAt = Date.distantPast
+            floatingDisplayTranslationText = ""
+            floatingQueuedTranslationText = ""
+            floatingQueuedTranslationSourceText = ""
+            return
+        }
+
+        floatingCommittedSourceText = line.sourceText
+        floatingCurrentPartialText = ""
+        pendingFloatingParagraphBreakBeforePartial = false
+        floatingPresentedSourceText = line.sourceText
+        floatingQueuedSourceText = ""
+        floatingPresentedAt = Date()
+
+        let translatedText = line.translatedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if translatedText.isEmpty || translatedText == AppText.translating {
+            floatingDisplayTranslationText = ""
+        } else {
+            floatingDisplayTranslationText = translatedText
+        }
+        floatingQueuedTranslationText = ""
+        floatingQueuedTranslationSourceText = ""
+    }
+
+    private func refreshFloatingCaptionPresentation() {
+        let candidate = floatingVisibleSourceTranscript()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !candidate.isEmpty else { return }
+
+        if floatingPresentedSourceText.isEmpty {
+            presentFloatingSourceText(candidate)
+            return
+        }
+
+        let normalizedCandidate = normalizedTranscriptForComparison(candidate)
+        let normalizedPresented = normalizedTranscriptForComparison(floatingPresentedSourceText)
+        guard normalizedCandidate != normalizedPresented else { return }
+
+        let now = Date()
+        if canUpdateFloatingPresentationImmediately(to: candidate, now: now)
+            || canAdvanceFloatingPresentation(now: now) {
+            presentFloatingSourceText(candidate)
+            return
+        }
+
+        floatingQueuedSourceText = candidate
+        scheduleFloatingPresentationAdvance()
+    }
+
+    private func canUpdateFloatingPresentationImmediately(to candidate: String, now: Date) -> Bool {
+        let elapsed = now.timeIntervalSince(floatingPresentedAt)
+        if elapsed <= Self.floatingCaptionEarlyRevisionWindow {
+            return true
+        }
+
+        let normalizedPresented = normalizedTranscriptForComparison(floatingPresentedSourceText)
+        let normalizedCandidate = normalizedTranscriptForComparison(candidate)
+        return normalizedPresented.count < Self.floatingCaptionImmediateExtensionCharacterLimit
+            && isWholeTextPrefix(normalizedPresented, of: normalizedCandidate)
+    }
+
+    private func canAdvanceFloatingPresentation(now: Date = Date()) -> Bool {
+        guard !floatingPresentedSourceText.isEmpty else { return true }
+        return now.timeIntervalSince(floatingPresentedAt) >= floatingCaptionDwellDuration()
+    }
+
+    private func floatingCaptionDwellDuration() -> TimeInterval {
+        let sourceLength = normalizedTranscriptForComparison(floatingPresentedSourceText).count
+        let translationLength = normalizedTranscriptForComparison(floatingDisplayTranslationText).count
+        let readableLength = max(sourceLength, translationLength)
+        let dwell = 1.1 + Double(readableLength) / 32.0
+        return min(
+            max(Self.minimumFloatingCaptionDwell, dwell),
+            Self.maximumFloatingCaptionDwell
+        )
+    }
+
+    private func presentFloatingSourceText(_ text: String) {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+
+        floatingPresentedSourceText = text
+        floatingQueuedSourceText = ""
+        floatingPresentedAt = Date()
+        promoteQueuedFloatingTranslationIfPossible()
+    }
+
+    private func scheduleFloatingPresentationAdvance() {
+        floatingPresentationTask?.cancel()
+
+        let remaining = max(
+            0.05,
+            floatingCaptionDwellDuration() - Date().timeIntervalSince(floatingPresentedAt)
+        )
+        let delayMilliseconds = max(50, Int(remaining * 1_000))
+        floatingPresentationTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(delayMilliseconds))
+            promoteQueuedFloatingPresentationIfReady()
+        }
+    }
+
+    private func promoteQueuedFloatingPresentationIfReady() {
+        guard canAdvanceFloatingPresentation() else {
+            scheduleFloatingPresentationAdvance()
+            return
+        }
+
+        if !floatingQueuedSourceText.isEmpty {
+            presentFloatingSourceText(floatingQueuedSourceText)
+        } else {
+            promoteQueuedFloatingTranslationIfPossible()
+        }
+
+        if !floatingQueuedSourceText.isEmpty || !floatingQueuedTranslationText.isEmpty {
+            scheduleFloatingPresentationAdvance()
+        } else {
+            floatingPresentationTask = nil
+        }
     }
 
     private func replaceCommittedUnitsIfRevision(with text: String, allowsBackfill: Bool) -> Bool {
@@ -1223,7 +1453,11 @@ final class TranslationSessionStore {
     }
 
     private func committedTranscriptAlreadyMatches(_ text: String) -> Bool {
-        let committed = committedSourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        committedTranscriptAlreadyMatches(text, in: committedSourceText)
+    }
+
+    private func committedTranscriptAlreadyMatches(_ text: String, in committedText: String) -> Bool {
+        let committed = committedText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !committed.isEmpty else { return false }
 
         let normalizedCommitted = normalizedTranscriptForComparison(committed)
@@ -1235,13 +1469,17 @@ final class TranslationSessionStore {
     }
 
     private func shouldAppendCommittedPartial(_ partial: String) -> Bool {
+        shouldAppendCommittedPartial(partial, to: committedSourceText)
+    }
+
+    private func shouldAppendCommittedPartial(_ partial: String, to committedText: String) -> Bool {
         let normalizedPartial = normalizedTranscriptForComparison(partial)
         guard !normalizedPartial.isEmpty else { return false }
 
-        guard !committedTranscriptAlreadyMatches(partial) else { return false }
+        guard !committedTranscriptAlreadyMatches(partial, in: committedText) else { return false }
 
         let partialUnits = transcriptUnits(from: partial)
-        let committedUnits = transcriptUnits(from: committedSourceText)
+        let committedUnits = transcriptUnits(from: committedText)
         guard partialUnits.count == 1,
               let partialUnit = partialUnits.first,
               let lastCommittedUnit = committedUnits.last
@@ -1334,6 +1572,21 @@ final class TranslationSessionStore {
         return committed + separator + partial
     }
 
+    private func floatingVisibleSourceTranscript() -> String {
+        let committed = floatingCommittedSourceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let partial = floatingCurrentPartialText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !committed.isEmpty else {
+            return partial
+        }
+        guard !partial.isEmpty else {
+            return committed
+        }
+
+        let separator = pendingFloatingParagraphBreakBeforePartial ? "\n\n" : "\n"
+        return committed + separator + partial
+    }
+
     private func scheduleTranscriptCleanup() {
         guard isRunning, currentLineID != nil else { return }
         guard Date().timeIntervalSince(lastRecognitionAt) > 1.5 else { return }
@@ -1388,6 +1641,7 @@ final class TranslationSessionStore {
             revision: line.revision + 1
         )
 
+        // Keep floating captions stable while cleanup rewrites the saved transcript.
         let updatedLine = lines[index]
         stageTranscriptForSave(updatedLine.sourceText)
         if updatedLine.translatedSourceText != updatedLine.sourceText {
@@ -1746,6 +2000,7 @@ final class TranslationSessionStore {
             return
         }
         let organizedTranslatedText = organizeTranscript(translatedText, language: targetLanguage)
+        let floatingTranslatedText = translatedText.trimmingCharacters(in: .whitespacesAndNewlines)
         if pendingTranslationSourceText == sourceText {
             pendingTranslationSourceText = ""
         }
@@ -1761,7 +2016,76 @@ final class TranslationSessionStore {
             revision: lines[index].revision + 1
         )
 
+        updateFloatingTranslationPresentation(floatingTranslatedText, sourceText: sourceText)
         speakTranslatedDeltaIfNeeded(organizedTranslatedText)
+    }
+
+    private func updateFloatingTranslationPresentation(_ translatedText: String, sourceText: String) {
+        guard !translatedText.isEmpty,
+              translatedText != AppText.translating
+        else {
+            return
+        }
+
+        if shouldUpdateFloatingTranslationDisplay(for: sourceText) {
+            if floatingDisplayTranslationText.isEmpty || canAdvanceFloatingPresentation() {
+                floatingDisplayTranslationText = translatedText
+            } else {
+                floatingQueuedTranslationText = translatedText
+                floatingQueuedTranslationSourceText = sourceText
+                scheduleFloatingPresentationAdvance()
+            }
+            return
+        }
+
+        if shouldUpdateQueuedFloatingTranslationDisplay(for: sourceText) {
+            floatingQueuedTranslationText = translatedText
+            floatingQueuedTranslationSourceText = sourceText
+            scheduleFloatingPresentationAdvance()
+        }
+    }
+
+    private func promoteQueuedFloatingTranslationIfPossible() {
+        guard !floatingQueuedTranslationText.isEmpty else { return }
+        guard shouldUpdateFloatingTranslationDisplay(for: floatingQueuedTranslationSourceText) else {
+            if floatingQueuedSourceText.isEmpty {
+                floatingQueuedTranslationText = ""
+                floatingQueuedTranslationSourceText = ""
+            }
+            return
+        }
+
+        floatingDisplayTranslationText = floatingQueuedTranslationText
+        floatingQueuedTranslationText = ""
+        floatingQueuedTranslationSourceText = ""
+    }
+
+    private func shouldUpdateFloatingTranslationDisplay(for sourceText: String) -> Bool {
+        translationSource(sourceText, matches: floatingPresentedSourceText)
+    }
+
+    private func shouldUpdateQueuedFloatingTranslationDisplay(for sourceText: String) -> Bool {
+        translationSource(sourceText, matches: floatingQueuedSourceText)
+    }
+
+    private func translationSource(_ sourceText: String, matches displaySourceText: String) -> Bool {
+        guard !displaySourceText.isEmpty else { return false }
+
+        let normalizedSourceText = normalizedTranscriptForComparison(sourceText)
+        let normalizedDisplaySourceText = normalizedTranscriptForComparison(displaySourceText)
+        if normalizedSourceText == normalizedDisplaySourceText
+            || isWholeTextPrefix(normalizedSourceText, of: normalizedDisplaySourceText) {
+            return true
+        }
+
+        let organizedDisplaySourceText = organizeTranscript(
+            displaySourceText,
+            language: sourceLanguage,
+            appliesLint: false
+        )
+        let normalizedOrganizedDisplaySourceText = normalizedTranscriptForComparison(organizedDisplaySourceText)
+        return normalizedSourceText == normalizedOrganizedDisplaySourceText
+            || isWholeTextPrefix(normalizedSourceText, of: normalizedOrganizedDisplaySourceText)
     }
 
     private func translationDirection(
