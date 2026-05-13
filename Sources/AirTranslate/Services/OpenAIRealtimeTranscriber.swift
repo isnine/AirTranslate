@@ -3,6 +3,11 @@ import CoreMedia
 import Foundation
 
 final class OpenAIRealtimeTranscriber: @unchecked Sendable {
+    enum OutputMode {
+        case transcription
+        case translationOnly
+    }
+
     weak var delegate: LiveSpeechTranscriberDelegate?
 
     private let stateLock = NSLock()
@@ -10,17 +15,42 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
     private var webSocketTask: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var language = LanguageOption.supported[0]
+    private var outputMode = OutputMode.transcription
     private var isPaused = false
 
     func start(language: LanguageOption, model: OpenAIRealtimeTranscriptionModel) async throws {
+        try await start(
+            language: language,
+            modelID: model.rawValue,
+            outputMode: .transcription,
+            isEnabled: model.isEnabled
+        )
+    }
+
+    func startRealtimeTranslationOnly(language: LanguageOption, model: OpenAIRealtimeTranslationModel) async throws {
+        try await start(
+            language: language,
+            modelID: model.apiModelID,
+            outputMode: .translationOnly,
+            isEnabled: model.usesRealtimeAudioTranslation
+        )
+    }
+
+    private func start(
+        language: LanguageOption,
+        modelID: String,
+        outputMode: OutputMode,
+        isEnabled: Bool
+    ) async throws {
         stop()
 
-        guard model.isEnabled else { return }
+        guard isEnabled else { return }
         guard let apiKey = try OpenAIAPIKeyStore.readAPIKey(), !apiKey.isEmpty else {
             throw OpenAITranslationError.missingAPIKey
         }
 
         self.language = language
+        self.outputMode = outputMode
         var request = URLRequest(url: URL(string: "wss://api.openai.com/v1/realtime?intent=transcription")!)
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("realtime=v1", forHTTPHeaderField: "OpenAI-Beta")
@@ -29,7 +59,7 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
         self.webSocketTask = webSocketTask
         webSocketTask.resume()
 
-        try await sendSessionUpdate(language: language, model: model)
+        try await sendSessionUpdate(language: language, modelID: modelID)
         receiveTask = Task { [weak self] in
             await self?.receiveLoop()
         }
@@ -72,12 +102,12 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
         webSocketTask = nil
     }
 
-    private func sendSessionUpdate(language: LanguageOption, model: OpenAIRealtimeTranscriptionModel) async throws {
+    private func sendSessionUpdate(language: LanguageOption, modelID: String) async throws {
         let event = OpenAIRealtimeSessionUpdateEvent(
             session: OpenAIRealtimeSession(
                 inputAudioFormat: "pcm16",
                 inputAudioTranscription: OpenAIRealtimeTranscriptionConfig(
-                    model: model.rawValue,
+                    model: modelID,
                     language: language.openAILanguageCode
                 ),
                 turnDetection: OpenAIRealtimeTurnDetection(type: "server_vad"),
@@ -125,24 +155,33 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
         switch event.type {
         case "conversation.item.input_audio_transcription.delta":
             guard let delta = event.delta, !delta.isEmpty else { return }
-            delegate?.liveSpeechTranscriber(
-                proxyTranscriber,
-                didRecognize: delta,
-                language: language,
-                confidence: 0.5
-            )
+            publish(text: delta)
         case "conversation.item.input_audio_transcription.completed":
             guard let transcript = event.transcript, !transcript.isEmpty else { return }
-            delegate?.liveSpeechTranscriber(
-                proxyTranscriber,
-                didRecognize: transcript,
-                language: language,
-                confidence: 0.5
-            )
+            publish(text: transcript)
         case "error":
             delegate?.liveSpeechTranscriber(proxyTranscriber, didFail: OpenAIRealtimeTranscriberError.server(event.error?.message))
         default:
             return
+        }
+    }
+
+    private func publish(text: String) {
+        switch outputMode {
+        case .transcription:
+            delegate?.liveSpeechTranscriber(
+                proxyTranscriber,
+                didRecognize: text,
+                language: language,
+                confidence: 0.5
+            )
+        case .translationOnly:
+            delegate?.liveSpeechTranscriber(
+                proxyTranscriber,
+                didTranslate: text,
+                language: language,
+                confidence: 0.5
+            )
         }
     }
 

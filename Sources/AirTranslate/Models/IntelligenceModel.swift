@@ -82,6 +82,7 @@ enum OpenAIRealtimeTranscriptionModel: String, CaseIterable, Identifiable {
 enum OpenAIRealtimeTranslationModel: String, CaseIterable, Identifiable {
     case off
     case gptRealtimeTranslate = "gpt-realtime-translate"
+    case gptRealtimeTranslateOnly = "gpt-realtime-translate-only"
 
     var id: String { rawValue }
 
@@ -91,10 +92,28 @@ enum OpenAIRealtimeTranslationModel: String, CaseIterable, Identifiable {
             AppText.localized(english: "Use Apple Translation", korean: "Apple Translation 사용")
         case .gptRealtimeTranslate:
             "gpt-realtime-translate"
+        case .gptRealtimeTranslateOnly:
+            AppText.localized(
+                english: "gpt-realtime-translate · translation only",
+                korean: "gpt-realtime-translate · 실시간 번역만"
+            )
         }
     }
 
     var isEnabled: Bool {
         self != .off
+    }
+
+    var usesRealtimeAudioTranslation: Bool {
+        self == .gptRealtimeTranslateOnly
+    }
+
+    var apiModelID: String {
+        switch self {
+        case .off:
+            ""
+        case .gptRealtimeTranslate, .gptRealtimeTranslateOnly:
+            "gpt-realtime-translate"
+        }
     }
 }

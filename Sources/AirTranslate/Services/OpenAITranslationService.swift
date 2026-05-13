@@ -22,7 +22,7 @@ actor OpenAITranslationService {
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONEncoder().encode(
             OpenAIResponseRequest(
-                model: selectedModel.rawValue,
+                model: selectedModel.apiModelID,
                 instructions: AppText.openAITranslationInstructions(
                     source: source.localizedTitle,
                     target: target.localizedTitle

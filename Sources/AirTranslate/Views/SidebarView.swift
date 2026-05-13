@@ -150,8 +150,8 @@ struct SidebarView: View {
     private var inlineConfigurationControls: some View {
         VStack(alignment: .leading, spacing: 10) {
             InlineSettingsGroup(
-                systemImage: "cpu",
-                title: AppText.model
+                systemImage: "apple.logo",
+                title: AppText.appleProcessingMode
             ) {
                 VStack(spacing: 6) {
                     ForEach(IntelligenceModel.allCases) { model in
@@ -166,17 +166,23 @@ struct SidebarView: View {
                         .buttonStyle(.plain)
                         .help(model.detail)
                     }
+
+                    Text(AppText.appleProcessingModeDescription)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 8)
                 }
             }
 
             InlineSettingsGroup(
-                systemImage: "sparkles",
+                systemImage: "bolt.horizontal.circle.fill",
                 title: AppText.gptModels
             ) {
                 VStack(spacing: 6) {
                     GPTModelMenuRow(
                         title: AppText.gptTranscriptionModel,
-                        systemImage: "waveform",
+                        systemImage: "waveform.circle.fill",
                         value: session.openAITranscriptionModel.title
                     ) {
                         ForEach(OpenAIRealtimeTranscriptionModel.allCases) { model in
@@ -188,7 +194,7 @@ struct SidebarView: View {
 
                     GPTModelMenuRow(
                         title: AppText.gptTranslationModel,
-                        systemImage: "globe.asia.australia.fill",
+                        systemImage: "globe",
                         value: session.openAITranslationModel.title
                     ) {
                         ForEach(OpenAIRealtimeTranslationModel.allCases) { model in
@@ -216,31 +222,6 @@ struct SidebarView: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, 8)
-                }
-            }
-
-            InlineSettingsGroup(
-                systemImage: "externaldrive.badge.checkmark",
-                title: AppText.requiredAssets
-            ) {
-                VStack(spacing: 6) {
-                    AssetAvailabilityRow(
-                        title: AppText.speechLanguagePack,
-                        availability: session.modelAvailability(for: .appleSpeechOnly),
-                        helpText: "\(IntelligenceModel.appleSpeechOnly.detail)\n\(session.modelAvailability(for: .appleSpeechOnly).detail)"
-                    ) {
-                        session.downloadModelAssets(for: .appleSpeechOnly)
-                    }
-
-                    if session.selectedModel == .appleSystem || session.openAITranscriptionModel.isEnabled {
-                        AssetAvailabilityRow(
-                            title: AppText.translationLanguagePack,
-                            availability: session.modelAvailability(for: .appleOnDevice),
-                            helpText: "\(IntelligenceModel.appleOnDevice.detail)\n\(session.modelAvailability(for: .appleOnDevice).detail)"
-                        ) {
-                            session.downloadModelAssets(for: .appleOnDevice)
-                        }
-                    }
                 }
             }
 
@@ -667,9 +648,9 @@ private struct ModelModeRow: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
-            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+            Image(systemName: modelSymbolName)
                 .font(.callout.weight(.semibold))
-                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary.opacity(0.55))
+                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
                 .frame(width: 18, height: 18)
 
             Text(model.title)
@@ -677,11 +658,12 @@ private struct ModelModeRow: View {
                 .foregroundStyle(.primary)
                 .lineLimit(1)
 
-            Image(systemName: "info.circle")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-
             Spacer(minLength: 0)
+
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(isSelected ? Color.accentColor : Color.secondary.opacity(0.55))
+                .frame(width: 18, height: 18)
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -691,6 +673,17 @@ private struct ModelModeRow: View {
                 .strokeBorder((isSelected ? Color.accentColor : Color.primary).opacity(isSelected ? 0.24 : 0.06), lineWidth: 1)
         }
         .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+    }
+
+    private var modelSymbolName: String {
+        switch model {
+        case .appleSystem:
+            "captions.bubble.fill"
+        case .appleOnDevice:
+            "arrow.down.circle.fill"
+        case .appleSpeechOnly:
+            "waveform"
+        }
     }
 }
 

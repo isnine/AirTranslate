@@ -89,7 +89,12 @@ enum AppText {
         english: "The stored OpenAI API key could not be read.",
         korean: "저장된 OpenAI API 키를 읽을 수 없습니다."
     )
-    static let gptModels = localized(english: "GPT Models", korean: "GPT 모델")
+    static let appleProcessingMode = localized(english: "Apple Mode", korean: "Apple 기본 모드")
+    static let appleProcessingModeDescription = localized(
+        english: "The default local workflow. Keep this as the base, then add OpenAI Realtime below only when needed.",
+        korean: "기본 로컬 처리 흐름입니다. 이 설정을 기준으로 두고, 필요한 경우 아래 OpenAI Realtime만 추가하세요."
+    )
+    static let gptModels = localized(english: "OpenAI Realtime", korean: "OpenAI Realtime")
     static let gptTranscriptionModel = localized(
         english: "Transcription",
         korean: "전사"
@@ -99,8 +104,12 @@ enum AppText {
         korean: "자동번역"
     )
     static let gptModelsDescription = localized(
-        english: "Keep the existing Apple workflow, or selectively add OpenAI realtime transcription and translation models.",
-        korean: "기존 Apple 방식을 유지하면서 OpenAI 실시간 전사와 자동번역 모델만 선택적으로 추가합니다."
+        english: "Optional add-on models. Choose translation only when you want gpt-realtime-translate to produce the translated stream directly.",
+        korean: "선택형 추가 모델입니다. gpt-realtime-translate가 번역 스트림을 바로 만들게 하려면 실시간 번역만을 선택하세요."
+    )
+    static let openAIRealtimeTranslationOnlySource = localized(
+        english: "OpenAI realtime translation",
+        korean: "OpenAI 실시간 번역"
     )
     static let output = localized(english: "Output", korean: "출력")
     static let translationSettings = localized(english: "Translation Settings", korean: "번역 설정")

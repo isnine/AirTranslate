@@ -9,7 +9,22 @@ protocol LiveSpeechTranscriberDelegate: AnyObject {
         language: LanguageOption,
         confidence: Double
     )
+    func liveSpeechTranscriber(
+        _ transcriber: LiveSpeechTranscriber,
+        didTranslate text: String,
+        language: LanguageOption,
+        confidence: Double
+    )
     func liveSpeechTranscriber(_ transcriber: LiveSpeechTranscriber, didFail error: Error)
+}
+
+extension LiveSpeechTranscriberDelegate {
+    func liveSpeechTranscriber(
+        _ transcriber: LiveSpeechTranscriber,
+        didTranslate text: String,
+        language: LanguageOption,
+        confidence: Double
+    ) {}
 }
 
 final class LiveSpeechTranscriber: @unchecked Sendable {

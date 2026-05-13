@@ -176,6 +176,7 @@ final class TranslationSessionStore {
     private var pendingTranslationSourceText = ""
     private var translatedSegmentsBySource: [String: String] = [:]
     private var translationCacheKeyOrder: [String] = []
+    private var realtimeTranslationOnlyText = ""
     private var activeAutosaveSourceText = ""
     private var activeAutosaveTranslatedText = ""
     private var isRestoringSelectedSettings = false
@@ -531,7 +532,12 @@ final class TranslationSessionStore {
     }
 
     private func startCaptioners() async throws {
-        if openAITranscriptionModel.isEnabled {
+        if openAITranslationModel.usesRealtimeAudioTranslation {
+            try await openAITranscriber.startRealtimeTranslationOnly(
+                language: targetLanguage,
+                model: openAITranslationModel
+            )
+        } else if openAITranscriptionModel.isEnabled {
             try await openAITranscriber.start(language: sourceLanguage, model: openAITranscriptionModel)
         } else {
             try await transcriber.start(languages: [sourceLanguage])
@@ -580,6 +586,7 @@ final class TranslationSessionStore {
         latestTranslationRequest = nil
         translationBurstStartedAt = Date.distantPast
         resetTranslationCache()
+        realtimeTranslationOnlyText = ""
         activeAutosaveSourceText = ""
         activeAutosaveTranslatedText = ""
         stopSpeaking()
@@ -1814,7 +1821,7 @@ final class TranslationSessionStore {
                 }
 
                 let translatedSegment: String
-                if openAITranslationModel.isEnabled {
+                if openAITranslationModel.isEnabled && !openAITranslationModel.usesRealtimeAudioTranslation {
                     translatedSegment = try await openAITranslator.translate(
                         segment,
                         source: source,
@@ -1867,7 +1874,64 @@ final class TranslationSessionStore {
         translationCacheKeyOrder.removeAll()
     }
 
+    private func appendRealtimeTranslationOnly(_ text: String) {
+        guard isRunning, !isPaused else { return }
+
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty else { return }
+        guard trimmedText != lastRecognizedText else { return }
+
+        if trimmedText.hasPrefix(realtimeTranslationOnlyText) {
+            realtimeTranslationOnlyText = trimmedText
+        } else if !realtimeTranslationOnlyText.hasSuffix(trimmedText) {
+            realtimeTranslationOnlyText = [realtimeTranslationOnlyText, trimmedText]
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+        }
+        guard !realtimeTranslationOnlyText.isEmpty else { return }
+
+        lastRecognizedText = trimmedText
+        lastRecognitionAt = Date()
+        transcriptCleanupTask?.cancel()
+
+        let sourceText = AppText.openAIRealtimeTranslationOnlySource
+        let translatedText = organizeTranscript(realtimeTranslationOnlyText, language: targetLanguage)
+
+        if let currentLineID,
+           let index = lines.firstIndex(where: { $0.id == currentLineID }) {
+            let existingLine = lines[index]
+            lines[index] = CaptionLine(
+                id: existingLine.id,
+                sourceText: sourceText,
+                translatedText: translatedText,
+                translatedSourceText: sourceText,
+                createdAt: existingLine.createdAt,
+                isFinal: false,
+                revision: existingLine.revision + 1,
+                usesLongSessionDisplay: usesLongSessionMode
+            )
+        } else {
+            let line = CaptionLine(
+                sourceText: sourceText,
+                translatedText: translatedText,
+                translatedSourceText: sourceText,
+                createdAt: Date(),
+                isFinal: false,
+                revision: 1,
+                usesLongSessionDisplay: usesLongSessionMode
+            )
+            currentLineID = line.id
+            lines.append(line)
+        }
+
+        stageTranscriptForSave(sourceText, translatedText: translatedText)
+        updateFloatingTranslationPresentation(translatedText, sourceText: sourceText)
+        speakTranslatedDeltaIfNeeded(translatedText)
+    }
+
     private func requestTranslation(for line: CaptionLine, source: LanguageOption, target: LanguageOption) {
+        guard !openAITranslationModel.usesRealtimeAudioTranslation else { return }
+
         let sourceText = line.sourceText
         guard pendingTranslationSourceText != sourceText else { return }
         pendingTranslationSourceText = sourceText
@@ -2264,6 +2328,17 @@ extension TranslationSessionStore: LiveSpeechTranscriberDelegate {
                 confidence: confidence,
                 isFinal: false
             )
+        }
+    }
+
+    nonisolated func liveSpeechTranscriber(
+        _ transcriber: LiveSpeechTranscriber,
+        didTranslate text: String,
+        language: LanguageOption,
+        confidence: Double
+    ) {
+        Task { @MainActor in
+            appendRealtimeTranslationOnly(text)
         }
     }
 
