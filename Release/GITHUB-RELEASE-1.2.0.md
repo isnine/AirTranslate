@@ -2,6 +2,8 @@
 
 Open-source release for GPT realtime captions, multilingual documentation, and the Apache 2.0 release bundle.
 
+AirTranslate is an independent open-source project and is not affiliated with Apple or OpenAI.
+
 ## Highlights
 
 - Optional OpenAI Realtime transcription and translation modes.

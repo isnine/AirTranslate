@@ -2,6 +2,8 @@
 
 AirTranslate transcribes and translates audio playing on the user's Mac.
 
+AirTranslate is an independent open-source project and is not affiliated with Apple or OpenAI.
+
 ## Data Handling
 
 - AirTranslate does not require an account.

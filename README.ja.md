@@ -184,3 +184,5 @@ docs/assets/
 ## ライセンス
 
 AirTranslateは[Apache License 2.0](LICENSE)の下で公開されています。著作権表示は[NOTICE](NOTICE)にあります。
+
+AirTranslateは独立したオープンソースプロジェクトであり、AppleまたはOpenAIと提携していません。

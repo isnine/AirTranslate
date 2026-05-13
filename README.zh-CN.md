@@ -184,3 +184,5 @@ docs/assets/
 ## 许可证
 
 AirTranslate 基于 [Apache License 2.0](LICENSE) 发布。版权声明见 [NOTICE](NOTICE)。
+
+AirTranslate 是独立的开源项目，不隶属于 Apple 或 OpenAI，也未与其建立合作关系。

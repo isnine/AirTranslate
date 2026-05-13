@@ -15,6 +15,7 @@ This folder contains reproducible release materials for the Apache 2.0 open-sour
 - The bundle identifier is `dev.appcaster.AirTranslate`.
 - The current release-candidate version is `1.2.0`.
 - The project is published as Apache 2.0 open source.
+- AirTranslate is an independent project and is not affiliated with Apple or OpenAI.
 - The release bundle must never include user API keys, bearer tokens, signing private keys, provisioning profiles, or local `.env` files.
 
 Override the defaults when needed:
