@@ -59,7 +59,7 @@ struct MenuBarStatusView: View {
             } label: {
                 IconPanelButtonLabel(
                     systemImage: isFloatingCaptionVisible ? "captions.bubble.fill" : "captions.bubble",
-                    title: AppText.localized(english: "View", korean: "보기"),
+                    title: AppText.localized(english: "View", korean: "보기", japanese: "表示", chineseSimplified: "显示"),
                     subtitle: isFloatingCaptionVisible ? AppText.floatingCaptionPowerOn : AppText.floatingCaptionPowerOff,
                     accentColor: isFloatingCaptionVisible ? .green : .secondary,
                     isSelected: isFloatingCaptionVisible
@@ -76,8 +76,8 @@ struct MenuBarStatusView: View {
             } label: {
                 IconPanelButtonLabel(
                     systemImage: "eye.slash",
-                    title: AppText.localized(english: "Hide", korean: "숨김"),
-                    subtitle: AppText.localized(english: "Close", korean: "닫기"),
+                    title: AppText.localized(english: "Hide", korean: "숨김", japanese: "非表示", chineseSimplified: "隐藏"),
+                    subtitle: AppText.localized(english: "Close", korean: "닫기", japanese: "閉じる", chineseSimplified: "关闭"),
                     accentColor: .secondary
                 )
             }
@@ -90,8 +90,8 @@ struct MenuBarStatusView: View {
             } label: {
                 IconPanelButtonLabel(
                     systemImage: "macwindow",
-                    title: AppText.localized(english: "App", korean: "앱"),
-                    subtitle: AppText.localized(english: "Main", korean: "메인"),
+                    title: AppText.localized(english: "App", korean: "앱", japanese: "アプリ", chineseSimplified: "应用"),
+                    subtitle: AppText.localized(english: "Main", korean: "메인", japanese: "メイン", chineseSimplified: "主窗口"),
                     accentColor: .secondary
                 )
             }
@@ -149,7 +149,7 @@ struct MenuBarStatusView: View {
                     .buttonStyle(.plain)
                     .help(mode.title)
                     .accessibilityLabel(mode.title)
-                    .accessibilityValue(session.floatingCaptionDisplayMode == mode ? AppText.localized(english: "Selected", korean: "선택됨") : "")
+                    .accessibilityValue(session.floatingCaptionDisplayMode == mode ? AppText.localized(english: "Selected", korean: "선택됨", japanese: "選択中", chineseSimplified: "已选择") : "")
                 }
             }
         }
@@ -159,7 +159,7 @@ struct MenuBarStatusView: View {
         VStack(alignment: .leading, spacing: 10) {
             ControlSectionHeader(
                 systemImage: "slider.horizontal.3",
-                title: AppText.localized(english: "Caption Style", korean: "자막 스타일")
+                title: AppText.localized(english: "Caption Style", korean: "자막 스타일", japanese: "字幕スタイル", chineseSimplified: "字幕样式")
             )
 
             HStack(spacing: 8) {
@@ -172,7 +172,7 @@ struct MenuBarStatusView: View {
                 } label: {
                     IconMenuLabel(
                         systemImage: "textformat.size",
-                        title: AppText.localized(english: "Size", korean: "크기"),
+                        title: AppText.localized(english: "Size", korean: "크기", japanese: "サイズ", chineseSimplified: "大小"),
                         value: session.floatingCaptionTextSize.title
                     )
                 }
@@ -189,7 +189,7 @@ struct MenuBarStatusView: View {
                 } label: {
                     IconMenuLabel(
                         systemImage: "line.3.horizontal",
-                        title: AppText.localized(english: "Lines", korean: "줄 수"),
+                        title: AppText.localized(english: "Lines", korean: "줄 수", japanese: "行数", chineseSimplified: "行数"),
                         value: session.floatingCaptionLineCount.title
                     )
                 }
@@ -242,7 +242,7 @@ struct MenuBarStatusView: View {
         case .original:
             AppText.originalOnly
         case .originalAndTranslation:
-            AppText.localized(english: "Both", korean: "원문+번역")
+            AppText.localized(english: "Both", korean: "원문+번역", japanese: "両方", chineseSimplified: "两者")
         case .translation:
             AppText.translationOnly
         }

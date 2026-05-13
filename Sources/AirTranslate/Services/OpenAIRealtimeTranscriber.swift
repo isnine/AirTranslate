@@ -3,6 +3,14 @@ import CoreMedia
 import Foundation
 
 final class OpenAIRealtimeTranscriber: @unchecked Sendable {
+    private static let realtimeAudioSampleRate = 24_000
+    private static let maxAudioChunkMilliseconds = 80
+    private static let bytesPerPCM16Sample = 2
+    private static let maxPCM16AudioChunkByteCount = realtimeAudioSampleRate
+        * bytesPerPCM16Sample
+        * maxAudioChunkMilliseconds
+        / 1_000
+
     enum OutputMode {
         case transcription
         case translationOnly
@@ -17,6 +25,7 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
     private var language = LanguageOption.supported[0]
     private var outputMode = OutputMode.transcription
     private var isPaused = false
+    private var realtimeTranscriptText = ""
 
     func start(language: LanguageOption, model: OpenAIRealtimeTranscriptionModel) async throws {
         try await start(
@@ -51,9 +60,17 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
 
         self.language = language
         self.outputMode = outputMode
-        var request = URLRequest(url: URL(string: "wss://api.openai.com/v1/realtime?intent=transcription")!)
+        realtimeTranscriptText = ""
+        let url: URL
+        switch outputMode {
+        case .transcription:
+            url = URL(string: "wss://api.openai.com/v1/realtime?intent=transcription")!
+        case .translationOnly:
+            url = URL(string: "wss://api.openai.com/v1/realtime/translations?model=\(modelID)")!
+        }
+
+        var request = URLRequest(url: url)
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("realtime=v1", forHTTPHeaderField: "OpenAI-Beta")
 
         let webSocketTask = URLSession.shared.webSocketTask(with: request)
         self.webSocketTask = webSocketTask
@@ -69,22 +86,27 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
         stateLock.lock()
         let isPaused = isPaused
         let webSocketTask = webSocketTask
+        let audioAppendEventType = outputMode.audioAppendEventType
         stateLock.unlock()
 
         guard !isPaused, let webSocketTask else { return }
 
         conversionLock.lock()
-        let audio = pcm16Base64Audio(from: sampleBuffer)
+        let audioChunks = pcm16Base64AudioChunks(from: sampleBuffer)
         conversionLock.unlock()
 
-        guard let audio else { return }
-        let event = OpenAIRealtimeAudioAppendEvent(audio: audio)
-        guard let data = try? JSONEncoder().encode(event),
-              let text = String(data: data, encoding: .utf8) else { return }
+        for audio in audioChunks {
+            let event = OpenAIRealtimeAudioAppendEvent(
+                type: audioAppendEventType,
+                audio: audio
+            )
+            guard let data = try? JSONEncoder().encode(event),
+                  let text = String(data: data, encoding: .utf8) else { continue }
 
-        webSocketTask.send(.string(text)) { [weak self] error in
-            guard let error, let self else { return }
-            self.delegate?.liveSpeechTranscriber(self.proxyTranscriber, didFail: error)
+            webSocketTask.send(.string(text)) { [weak self] error in
+                guard let error, let self else { return }
+                self.delegate?.liveSpeechTranscriber(self.proxyTranscriber, didFail: error)
+            }
         }
     }
 
@@ -100,21 +122,42 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
         receiveTask = nil
         webSocketTask?.cancel(with: .goingAway, reason: nil)
         webSocketTask = nil
+        realtimeTranscriptText = ""
     }
 
     private func sendSessionUpdate(language: LanguageOption, modelID: String) async throws {
-        let event = OpenAIRealtimeSessionUpdateEvent(
-            session: OpenAIRealtimeSession(
-                inputAudioFormat: "pcm16",
-                inputAudioTranscription: OpenAIRealtimeTranscriptionConfig(
-                    model: modelID,
-                    language: language.openAILanguageCode
-                ),
-                turnDetection: OpenAIRealtimeTurnDetection(type: "server_vad"),
-                inputAudioNoiseReduction: OpenAIRealtimeNoiseReduction(type: "near_field")
+        let data: Data
+        switch outputMode {
+        case .transcription:
+            let event = OpenAIRealtimeTranscriptionSessionUpdateEvent(
+                session: OpenAIRealtimeTranscriptionSession(
+                    type: "transcription",
+                    audio: OpenAIRealtimeTranscriptionAudio(
+                        input: OpenAIRealtimeTranscriptionAudioInput(
+                            format: OpenAIRealtimeAudioFormat(type: "audio/pcm", rate: Self.realtimeAudioSampleRate),
+                            transcription: OpenAIRealtimeTranscriptionConfig(
+                                model: modelID,
+                                language: language.openAILanguageCode
+                            ),
+                            turnDetection: .lowLatencyServerVAD,
+                            noiseReduction: OpenAIRealtimeNoiseReduction(type: "near_field")
+                        )
+                    )
+                )
             )
-        )
-        let data = try JSONEncoder().encode(event)
+            data = try JSONEncoder().encode(event)
+        case .translationOnly:
+            let event = OpenAIRealtimeTranslationSessionUpdateEvent(
+                session: OpenAIRealtimeTranslationSession(
+                    audio: OpenAIRealtimeTranslationAudio(
+                        output: OpenAIRealtimeTranslationAudioOutput(
+                            language: language.openAILanguageCode
+                        )
+                    )
+                )
+            )
+            data = try JSONEncoder().encode(event)
+        }
         guard let text = String(data: data, encoding: .utf8) else { return }
         try await send(text)
     }
@@ -155,15 +198,41 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
         switch event.type {
         case "conversation.item.input_audio_transcription.delta":
             guard let delta = event.delta, !delta.isEmpty else { return }
-            publish(text: delta)
+            appendRealtimeTranscriptDelta(delta)
         case "conversation.item.input_audio_transcription.completed":
             guard let transcript = event.transcript, !transcript.isEmpty else { return }
             publish(text: transcript)
+            realtimeTranscriptText = ""
+        case "session.output_transcript.delta":
+            guard outputMode == .translationOnly,
+                  let delta = event.delta,
+                  !delta.isEmpty else { return }
+            appendRealtimeTranscriptDelta(delta)
+        case "session.output_transcript.done":
+            guard outputMode == .translationOnly,
+                  let transcript = event.transcript,
+                  !transcript.isEmpty else { return }
+            publish(text: transcript)
+            realtimeTranscriptText = ""
+        case "session.output_audio.delta":
+            guard outputMode == .translationOnly,
+                  let delta = event.delta,
+                  !delta.isEmpty else { return }
+            delegate?.liveSpeechTranscriber(
+                proxyTranscriber,
+                didOutputAudioPCM16Base64: delta,
+                sampleRate: Double(Self.realtimeAudioSampleRate)
+            )
         case "error":
             delegate?.liveSpeechTranscriber(proxyTranscriber, didFail: OpenAIRealtimeTranscriberError.server(event.error?.message))
         default:
             return
         }
+    }
+
+    private func appendRealtimeTranscriptDelta(_ delta: String) {
+        realtimeTranscriptText += delta
+        publish(text: realtimeTranscriptText)
     }
 
     private func publish(text: String) {
@@ -189,7 +258,13 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
         LiveSpeechTranscriber()
     }
 
-    private func pcm16Base64Audio(from sampleBuffer: CMSampleBuffer) -> String? {
+    private func pcm16Base64AudioChunks(from sampleBuffer: CMSampleBuffer) -> [String] {
+        guard let formatDescription = CMSampleBufferGetFormatDescription(sampleBuffer),
+              let streamDescription = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription)
+        else {
+            return []
+        }
+
         var listSize = 0
         CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
             sampleBuffer,
@@ -201,13 +276,13 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
             flags: 0,
             blockBufferOut: nil
         )
-        guard listSize > 0 else { return nil }
+        guard listSize > 0 else { return [] }
 
         return withUnsafeTemporaryAllocation(
             byteCount: listSize,
             alignment: MemoryLayout<AudioBufferList>.alignment
-        ) { rawList -> String? in
-            guard let baseAddress = rawList.baseAddress else { return nil }
+        ) { rawList -> [String] in
+            guard let baseAddress = rawList.baseAddress else { return [] }
 
             let audioBufferList = baseAddress.bindMemory(to: AudioBufferList.self, capacity: 1)
             var blockBuffer: CMBlockBuffer?
@@ -221,38 +296,96 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
                 flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
                 blockBufferOut: &blockBuffer
             )
-            guard status == noErr else { return nil }
+            guard status == noErr else { return [] }
 
             let buffers = UnsafeMutableAudioBufferListPointer(audioBufferList)
             var audioData = Data()
+            let sourceIsFloat = streamDescription.pointee.mFormatFlags & kAudioFormatFlagIsFloat != 0
             for buffer in buffers {
                 guard let data = buffer.mData else { continue }
-                audioData.append(data.assumingMemoryBound(to: UInt8.self), count: Int(buffer.mDataByteSize))
+
+                if sourceIsFloat {
+                    let sampleCount = Int(buffer.mDataByteSize) / MemoryLayout<Float>.size
+                    let samples = data.bindMemory(to: Float.self, capacity: sampleCount)
+                    for index in 0..<sampleCount {
+                        let clamped = max(-1, min(1, samples[index]))
+                        var sample = Int16(clamped * Float(Int16.max)).littleEndian
+                        withUnsafeBytes(of: &sample) { audioData.append(contentsOf: $0) }
+                    }
+                } else {
+                    audioData.append(data.assumingMemoryBound(to: UInt8.self), count: Int(buffer.mDataByteSize))
+                }
             }
 
-            guard !audioData.isEmpty else { return nil }
-            return audioData.base64EncodedString()
+            guard !audioData.isEmpty else { return [] }
+            return base64PCM16Chunks(from: audioData)
         }
     }
+
+    private func base64PCM16Chunks(from audioData: Data) -> [String] {
+        guard audioData.count > Self.maxPCM16AudioChunkByteCount else {
+            return [audioData.base64EncodedString()]
+        }
+
+        var chunks: [String] = []
+        var offset = 0
+        while offset < audioData.count {
+            let end = min(offset + Self.maxPCM16AudioChunkByteCount, audioData.count)
+            chunks.append(Data(audioData[offset..<end]).base64EncodedString())
+            offset = end
+        }
+        return chunks
+    }
 }
 
-private struct OpenAIRealtimeSessionUpdateEvent: Encodable {
-    let type = "transcription_session.update"
-    let session: OpenAIRealtimeSession
+private struct OpenAIRealtimeTranscriptionSessionUpdateEvent: Encodable {
+    let type = "session.update"
+    let session: OpenAIRealtimeTranscriptionSession
 }
 
-private struct OpenAIRealtimeSession: Encodable {
-    let inputAudioFormat: String
-    let inputAudioTranscription: OpenAIRealtimeTranscriptionConfig
+private struct OpenAIRealtimeTranslationSessionUpdateEvent: Encodable {
+    let type = "session.update"
+    let session: OpenAIRealtimeTranslationSession
+}
+
+private struct OpenAIRealtimeTranscriptionSession: Encodable {
+    let type: String
+    let audio: OpenAIRealtimeTranscriptionAudio
+}
+
+private struct OpenAIRealtimeTranscriptionAudio: Encodable {
+    let input: OpenAIRealtimeTranscriptionAudioInput
+}
+
+private struct OpenAIRealtimeTranscriptionAudioInput: Encodable {
+    let format: OpenAIRealtimeAudioFormat
+    let transcription: OpenAIRealtimeTranscriptionConfig
     let turnDetection: OpenAIRealtimeTurnDetection
-    let inputAudioNoiseReduction: OpenAIRealtimeNoiseReduction
+    let noiseReduction: OpenAIRealtimeNoiseReduction
 
     private enum CodingKeys: String, CodingKey {
-        case inputAudioFormat = "input_audio_format"
-        case inputAudioTranscription = "input_audio_transcription"
+        case format
+        case transcription
         case turnDetection = "turn_detection"
-        case inputAudioNoiseReduction = "input_audio_noise_reduction"
+        case noiseReduction = "noise_reduction"
     }
+}
+
+private struct OpenAIRealtimeAudioFormat: Encodable {
+    let type: String
+    let rate: Int
+}
+
+private struct OpenAIRealtimeTranslationSession: Encodable {
+    let audio: OpenAIRealtimeTranslationAudio
+}
+
+private struct OpenAIRealtimeTranslationAudio: Encodable {
+    let output: OpenAIRealtimeTranslationAudioOutput
+}
+
+private struct OpenAIRealtimeTranslationAudioOutput: Encodable {
+    let language: String
 }
 
 private struct OpenAIRealtimeTranscriptionConfig: Encodable {
@@ -262,6 +395,35 @@ private struct OpenAIRealtimeTranscriptionConfig: Encodable {
 
 private struct OpenAIRealtimeTurnDetection: Encodable {
     let type: String
+    let threshold: Double?
+    let prefixPaddingMilliseconds: Int?
+    let silenceDurationMilliseconds: Int?
+
+    static let lowLatencyServerVAD = OpenAIRealtimeTurnDetection(
+        type: "server_vad",
+        threshold: 0.42,
+        prefixPaddingMilliseconds: 120,
+        silenceDurationMilliseconds: 220
+    )
+
+    init(
+        type: String,
+        threshold: Double? = nil,
+        prefixPaddingMilliseconds: Int? = nil,
+        silenceDurationMilliseconds: Int? = nil
+    ) {
+        self.type = type
+        self.threshold = threshold
+        self.prefixPaddingMilliseconds = prefixPaddingMilliseconds
+        self.silenceDurationMilliseconds = silenceDurationMilliseconds
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case threshold
+        case prefixPaddingMilliseconds = "prefix_padding_ms"
+        case silenceDurationMilliseconds = "silence_duration_ms"
+    }
 }
 
 private struct OpenAIRealtimeNoiseReduction: Encodable {
@@ -269,7 +431,7 @@ private struct OpenAIRealtimeNoiseReduction: Encodable {
 }
 
 private struct OpenAIRealtimeAudioAppendEvent: Encodable {
-    let type = "input_audio_buffer.append"
+    let type: String
     let audio: String
 }
 
@@ -291,6 +453,17 @@ private enum OpenAIRealtimeTranscriberError: LocalizedError {
         switch self {
         case let .server(message):
             message ?? AppText.openAIInvalidResponse
+        }
+    }
+}
+
+private extension OpenAIRealtimeTranscriber.OutputMode {
+    var audioAppendEventType: String {
+        switch self {
+        case .transcription:
+            "input_audio_buffer.append"
+        case .translationOnly:
+            "session.input_audio_buffer.append"
         }
     }
 }

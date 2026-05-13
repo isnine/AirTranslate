@@ -4,8 +4,10 @@ import SwiftUI
 struct SidebarView: View {
     @Bindable var session: TranslationSessionStore
     @State private var isLibraryPresented = false
-    @State private var isConfigurationExpanded = false
+    @State private var isConfigurationPresented = false
     @State private var openAIAPIKey = ""
+    @State private var configurationNotice: String?
+    @State private var shouldFocusOpenAIAPIKey = false
 
     var body: some View {
         ScrollView {
@@ -20,6 +22,15 @@ struct SidebarView: View {
         .navigationTitle("AirTranslate")
         .sheet(isPresented: $isLibraryPresented) {
             TranscriptLibraryView(session: session)
+        }
+        .sheet(isPresented: $isConfigurationPresented) {
+            ConfigurationSheetView(
+                session: session,
+                openAIAPIKey: $openAIAPIKey,
+                configurationNotice: $configurationNotice,
+                shouldFocusOpenAIAPIKey: $shouldFocusOpenAIAPIKey,
+                dismiss: { isConfigurationPresented = false }
+            )
         }
     }
 
@@ -74,69 +85,86 @@ struct SidebarView: View {
         SidebarCard(
             title: AppText.translationSettings,
             headerAccessory: {
-                expandConfigurationButton
+                openConfigurationButton
             }
         ) {
             VStack(spacing: 10) {
-                HStack(spacing: 6) {
-                    CompactLanguagePicker(title: AppText.from, selection: $session.sourceLanguage)
+                languageControls
 
-                    Image(systemName: "arrow.right")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.tertiary)
-                        .frame(width: 12)
-                        .accessibilityHidden(true)
-
-                    CompactLanguagePicker(title: AppText.to, selection: $session.targetLanguage)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                ProcessingEnginePicker(
+                    selection: processingEngineBinding,
+                    isDisabled: session.isRunning
+                )
 
                 SessionDurationRadioGroup(
                     selection: $session.sessionDurationMode,
                     isDisabled: session.isRunning
                 )
-
-                Divider()
-
-                Button {
-                    withAnimation(.spring(response: 0.24, dampingFraction: 0.86)) {
-                        isConfigurationExpanded.toggle()
-                    }
-                } label: {
-                    ConfigurationSummaryRow(
-                        modelTitle: "\(session.selectedModel.title) · \(session.sessionDurationMode.title)",
-                        outputTitle: outputSummary,
-                        isExpanded: isConfigurationExpanded
-                    )
-                }
-                .buttonStyle(.plain)
-                .help(AppText.configureTranslationSettings)
-                .accessibilityLabel(AppText.configureTranslationSettings)
-                .accessibilityValue(isConfigurationExpanded ? AppText.localized(english: "Expanded", korean: "펼쳐짐") : AppText.localized(english: "Collapsed", korean: "접힘"))
-
-                if isConfigurationExpanded {
-                    inlineConfigurationControls
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                }
             }
         }
         .onAppear {
-            isConfigurationExpanded = false
             session.refreshModelAvailability()
+            if usesOpenAIAutoLanguageFlow {
+                session.usePreferredLanguageForOpenAIOutput()
+            }
         }
     }
 
-    private var expandConfigurationButton: some View {
-        Button {
-            withAnimation(.spring(response: 0.24, dampingFraction: 0.86)) {
-                isConfigurationExpanded.toggle()
+    @ViewBuilder
+    private var languageControls: some View {
+        if usesOpenAIAutoLanguageFlow {
+            VStack(alignment: .leading, spacing: 6) {
+                OpenAIAutoLanguageRow()
+                PreferredLanguageRow(
+                    selection: $session.targetLanguage,
+                    isDisabled: session.isRunning
+                )
+                OpenAIVoiceOutputRow(isOn: $session.isDubbingEnabled)
+
+                Text(AppText.openAILanguageModeDescription)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 8)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            HStack(spacing: 6) {
+                CompactLanguagePicker(title: AppText.from, selection: $session.sourceLanguage)
+
+                Button {
+                    swapLanguages()
+                } label: {
+                    Image(systemName: "arrow.left.arrow.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 24, height: 24)
+                        .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(session.isRunning)
+                .help(AppText.swapLanguages)
+                .accessibilityLabel(AppText.swapLanguages)
+
+                CompactLanguagePicker(title: AppText.to, selection: $session.targetLanguage)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var openConfigurationButton: some View {
+        Button {
+            if ProcessingEngine.current(for: session) == .gpt && !session.hasOpenAIAPIKey {
+                configurationNotice = AppText.openAIAPIKeyRequiredForGPTMode
+                shouldFocusOpenAIAPIKey = true
+            }
+            isConfigurationPresented = true
         } label: {
             Image(systemName: "gearshape.fill")
                 .font(.caption.weight(.bold))
-                .foregroundStyle(isConfigurationExpanded ? Color.white : Color.accentColor)
+                .foregroundStyle(Color.accentColor)
                 .frame(width: 26, height: 26)
-                .background(isConfigurationExpanded ? Color.accentColor : Color.accentColor.opacity(0.13), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .background(Color.accentColor.opacity(0.13), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
                         .strokeBorder(Color.accentColor.opacity(0.22), lineWidth: 1)
@@ -147,129 +175,45 @@ struct SidebarView: View {
         .accessibilityLabel(AppText.configureTranslationSettings)
     }
 
-    private var inlineConfigurationControls: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            InlineSettingsGroup(
-                systemImage: "apple.logo",
-                title: AppText.appleProcessingMode
-            ) {
-                VStack(spacing: 6) {
-                    ForEach(IntelligenceModel.allCases) { model in
-                        Button {
-                            session.selectedModel = model
-                        } label: {
-                            ModelModeRow(
-                                model: model,
-                                isSelected: session.selectedModel == model
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .help(model.detail)
+    private var processingEngineBinding: Binding<ProcessingEngine> {
+        Binding(
+            get: {
+                ProcessingEngine.current(for: session)
+            },
+            set: { engine in
+                switch engine {
+                case .apple:
+                    session.selectedModel = .appleSystem
+                    session.openAITranscriptionModel = .off
+                    session.openAITranslationModel = .off
+                case .gpt:
+                    session.selectedModel = .appleSystem
+                    session.isTranscriptLintEnabled = false
+                    if !session.openAITranscriptionModel.isEnabled {
+                        session.openAITranscriptionModel = .gptRealtimeWhisper
                     }
-
-                    Text(AppText.appleProcessingModeDescription)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, 8)
+                    if !session.openAITranslationModel.isEnabled {
+                        session.openAITranslationModel = .gptRealtimeTranslate
+                    }
+                    session.usePreferredLanguageForOpenAIOutput()
+                    if !session.hasOpenAIAPIKey {
+                        configurationNotice = AppText.openAIAPIKeyRequiredForGPTMode
+                        shouldFocusOpenAIAPIKey = true
+                        isConfigurationPresented = true
+                    }
                 }
             }
-
-            InlineSettingsGroup(
-                systemImage: "bolt.horizontal.circle.fill",
-                title: AppText.gptModels
-            ) {
-                VStack(spacing: 6) {
-                    GPTModelMenuRow(
-                        title: AppText.gptTranscriptionModel,
-                        systemImage: "waveform.circle.fill",
-                        value: session.openAITranscriptionModel.title
-                    ) {
-                        ForEach(OpenAIRealtimeTranscriptionModel.allCases) { model in
-                            Button(model.title) {
-                                session.openAITranscriptionModel = model
-                            }
-                        }
-                    }
-
-                    GPTModelMenuRow(
-                        title: AppText.gptTranslationModel,
-                        systemImage: "globe",
-                        value: session.openAITranslationModel.title
-                    ) {
-                        ForEach(OpenAIRealtimeTranslationModel.allCases) { model in
-                            Button(model.title) {
-                                session.openAITranslationModel = model
-                            }
-                        }
-                    }
-
-                    GPTAPIKeyRow(
-                        apiKey: $openAIAPIKey,
-                        hasAPIKey: session.hasOpenAIAPIKey,
-                        save: {
-                            session.saveOpenAIAPIKey(openAIAPIKey)
-                            openAIAPIKey = ""
-                        },
-                        remove: {
-                            session.removeOpenAIAPIKey()
-                            openAIAPIKey = ""
-                        }
-                    )
-
-                    Text(AppText.gptModelsDescription)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, 8)
-                }
-            }
-
-            InlineSettingsGroup(
-                systemImage: "waveform.and.person.filled",
-                title: AppText.liveOutput
-            ) {
-                VStack(spacing: 6) {
-                    CompactToggleRow(
-                        title: AppText.transcriptPolish,
-                        systemImage: "text.badge.checkmark",
-                        isOn: $session.isTranscriptLintEnabled
-                    )
-                    .help(AppText.transcriptLintDescription)
-
-                    CompactToggleRow(
-                        title: AppText.voiceOutput,
-                        systemImage: "speaker.wave.2.fill",
-                        isOn: $session.isDubbingEnabled
-                    )
-                }
-            }
-        }
+        )
     }
 
-    private var outputSummary: String {
-        switch (session.isTranscriptLintEnabled, session.isDubbingEnabled) {
-        case (true, true):
-            AppText.localized(
-                english: "Polish + Voice",
-                korean: "다듬기+음성"
-            )
-        case (true, false):
-            AppText.localized(
-                english: "Polish",
-                korean: "다듬기"
-            )
-        case (false, true):
-            AppText.localized(
-                english: "Voice",
-                korean: "음성"
-            )
-        case (false, false):
-            AppText.localized(
-                english: "Transcript only",
-                korean: "기록만"
-            )
-        }
+    private func swapLanguages() {
+        let sourceLanguage = session.sourceLanguage
+        session.sourceLanguage = session.targetLanguage
+        session.targetLanguage = sourceLanguage
+    }
+
+    private var usesOpenAIAutoLanguageFlow: Bool {
+        ProcessingEngine.current(for: session) == .gpt && session.isUsingOpenAIRealtimeTranslation
     }
 
     private var libraryCard: some View {
@@ -316,54 +260,402 @@ struct SidebarView: View {
     }
 }
 
-private struct ConfigurationSummaryRow: View {
-    let modelTitle: String
-    let outputTitle: String
-    let isExpanded: Bool
+private enum ProcessingEngine: String, CaseIterable, Identifiable {
+    case apple
+    case gpt
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .apple:
+            AppText.localized(
+                english: "Apple Mode",
+                korean: "Apple 기본 모드",
+                japanese: "Apple標準モード",
+                chineseSimplified: "Apple 默认模式"
+            )
+        case .gpt:
+            AppText.localized(
+                english: "GPT Mode",
+                korean: "GPT 모드",
+                japanese: "GPTモード",
+                chineseSimplified: "GPT 模式"
+            )
+        }
+    }
+
+    @MainActor
+    static func current(for session: TranslationSessionStore) -> ProcessingEngine {
+        session.openAITranscriptionModel.isEnabled || session.openAITranslationModel.isEnabled ? .gpt : .apple
+    }
+}
+
+private struct ConfigurationSheetView: View {
+    @Bindable var session: TranslationSessionStore
+    @Binding var openAIAPIKey: String
+    @Binding var configurationNotice: String?
+    @Binding var shouldFocusOpenAIAPIKey: Bool
+    let dismiss: () -> Void
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "slider.horizontal.3")
-                .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 30, height: 30)
-                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        VStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: "gearshape.fill")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 34, height: 34)
+                    .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(AppText.localized(english: "Session Options", korean: "세부 설정"))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.primary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(AppText.localized(
+                        english: "Session Options",
+                        korean: "세부 설정",
+                        japanese: "詳細設定",
+                        chineseSimplified: "详细设置"
+                    ))
+                        .font(.headline.weight(.semibold))
 
-                Text(modelTitle)
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.82)
+                    Text("\(ProcessingEngine.current(for: session).title) · \(session.sessionDurationMode.title)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help(AppText.close)
+                .accessibilityLabel(AppText.close)
             }
+            .padding(16)
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    appleProcessingSection
+                    openAIModelsSection
+                    liveOutputSection
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 28)
+            }
+
+            Divider()
+
+            HStack {
+                Spacer()
+
+                Button(AppText.close) {
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding(16)
+        }
+        .frame(width: 460)
+        .frame(minHeight: 560)
+        .onAppear {
+            session.refreshModelAvailability()
+        }
+    }
+
+    private var appleProcessingSection: some View {
+        InlineSettingsGroup(
+            systemImage: "apple.logo",
+            title: AppText.appleProcessingMode
+        ) {
+            VStack(spacing: 6) {
+                ForEach(IntelligenceModel.allCases) { model in
+                    Button {
+                        session.selectedModel = model
+                    } label: {
+                        ModelModeRow(
+                            model: model,
+                            isSelected: session.selectedModel == model
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .help(model.detail)
+                }
+
+                Text(AppText.appleProcessingModeDescription)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 8)
+            }
+        }
+    }
+
+    private var openAIModelsSection: some View {
+        InlineSettingsGroup(
+            systemImage: "bolt.horizontal.circle.fill",
+            title: AppText.gptModels
+        ) {
+            VStack(spacing: 6) {
+                GPTModelMenuRow(
+                    title: AppText.gptTranscriptionModel,
+                    systemImage: "waveform.circle.fill",
+                    value: session.openAITranscriptionModel.title
+                ) {
+                    ForEach(OpenAIRealtimeTranscriptionModel.allCases) { model in
+                        Button(model.title) {
+                            session.openAITranscriptionModel = model
+                        }
+                    }
+                }
+
+                GPTModelMenuRow(
+                    title: AppText.gptTranslationModel,
+                    systemImage: "globe",
+                    value: session.openAITranslationModel.title
+                ) {
+                    ForEach(OpenAIRealtimeTranslationModel.allCases) { model in
+                        Button(model.title) {
+                            session.openAITranslationModel = model
+                        }
+                    }
+                }
+
+                GPTAPIKeyRow(
+                    apiKey: $openAIAPIKey,
+                    shouldFocusAPIKey: $shouldFocusOpenAIAPIKey,
+                    hasAPIKey: session.hasOpenAIAPIKey,
+                    notice: configurationNotice,
+                    save: {
+                        session.saveOpenAIAPIKey(openAIAPIKey)
+                        openAIAPIKey = ""
+                        configurationNotice = nil
+                        shouldFocusOpenAIAPIKey = false
+                    },
+                    remove: {
+                        session.removeOpenAIAPIKey()
+                        openAIAPIKey = ""
+                        if ProcessingEngine.current(for: session) == .gpt {
+                            configurationNotice = AppText.openAIAPIKeyRequiredForGPTMode
+                            shouldFocusOpenAIAPIKey = true
+                        }
+                    }
+                )
+
+                Text(AppText.gptModelsDescription)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 8)
+
+                HStack(spacing: 5) {
+                    Text(AppText.openAIAPIKeyPlatformPrompt)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+
+                    Link(
+                        AppText.openAIAPIKeyPlatformLink,
+                        destination: URL(string: "https://platform.openai.com/api-keys")!
+                    )
+                    .font(.caption2.weight(.semibold))
+                }
+                .padding(.horizontal, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private var liveOutputSection: some View {
+        InlineSettingsGroup(
+            systemImage: "waveform.and.person.filled",
+            title: AppText.liveOutput
+        ) {
+            VStack(spacing: 6) {
+                if ProcessingEngine.current(for: session) == .gpt {
+                    CompactInfoRow(
+                        title: AppText.openAINativeOutput,
+                        detail: AppText.openAINativeOutputDescription,
+                        systemImage: "sparkles"
+                    )
+                } else {
+                    CompactToggleRow(
+                        title: AppText.transcriptPolish,
+                        systemImage: "text.badge.checkmark",
+                        isOn: $session.isTranscriptLintEnabled
+                    )
+                    .help(AppText.transcriptLintDescription)
+                }
+
+                CompactToggleRow(
+                    title: ProcessingEngine.current(for: session) == .gpt
+                        ? AppText.translatedVoiceOutput
+                        : AppText.voiceOutput,
+                    systemImage: "speaker.wave.2.fill",
+                    isOn: $session.isDubbingEnabled
+                )
+            }
+        }
+    }
+}
+
+private struct OpenAIAutoLanguageRow: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "sparkles")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 16)
+
+            Text(AppText.autoDetectInput)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
 
             Spacer(minLength: 6)
 
-            Text(outputTitle)
+            Text(AppText.autoDetectShort)
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(Color.accentColor)
-                .lineLimit(1)
-                .padding(.horizontal, 7)
+                .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(Color.accentColor.opacity(0.12), in: Capsule())
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .help(AppText.openAILanguageModeDescription)
+        .accessibilityLabel(AppText.autoDetectInput)
+    }
+}
 
-            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+private struct PreferredLanguageRow: View {
+    @Binding var selection: LanguageOption
+    let isDisabled: Bool
+
+    var body: some View {
+        Menu {
+            ForEach(LanguageOption.supported) { language in
+                Button(language.localizedTitle) {
+                    selection = language
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "globe")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 16)
+
+                Text(AppText.preferredLanguage)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+
+                Spacer(minLength: 6)
+
+                Text(selection.localizedTitle)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.76)
+
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled)
+        .help(AppText.preferredLanguage)
+        .accessibilityLabel(AppText.preferredLanguage)
+        .accessibilityValue(selection.localizedTitle)
+    }
+}
+
+private struct OpenAIVoiceOutputRow: View {
+    @Binding var isOn: Bool
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 8) {
+            Image(systemName: isOn ? "speaker.wave.2.fill" : "speaker")
                 .font(.caption.weight(.bold))
-                .foregroundStyle(.secondary)
-                .frame(width: 14)
+                .foregroundStyle(isOn ? Color.accentColor : Color.secondary)
+                .frame(width: 16)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(AppText.translatedVoiceOutput)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                Text(AppText.translatedVoiceOutputDescription)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            Toggle(AppText.translatedVoiceOutput, isOn: $isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
         }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .help(AppText.translatedVoiceOutputDescription)
+        .accessibilityLabel(AppText.translatedVoiceOutput)
+        .accessibilityValue(isOn ? AppText.floatingCaptionPowerOn : AppText.floatingCaptionPowerOff)
+    }
+}
+
+private struct ProcessingEnginePicker: View {
+    @Binding var selection: ProcessingEngine
+    let isDisabled: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 7) {
+                Image(systemName: "switch.2")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 14)
+
+                Text(AppText.model)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                Spacer(minLength: 0)
+            }
+
+            Picker(AppText.model, selection: $selection) {
+                ForEach(ProcessingEngine.allCases) { engine in
+                    Text(engine.title).tag(engine)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(maxWidth: .infinity)
+            .disabled(isDisabled)
+            .accessibilityLabel(AppText.model)
         }
-        .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
     }
 }
 
@@ -405,23 +697,60 @@ private struct CompactToggleRow: View {
     @Binding var isOn: Bool
 
     var body: some View {
-        Toggle(isOn: $isOn) {
-            HStack(spacing: 8) {
-                Image(systemName: systemImage)
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(isOn ? Color.accentColor : Color.secondary)
-                    .frame(width: 16)
+        HStack(spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(isOn ? Color.accentColor : Color.secondary)
+                .frame(width: 18, height: 18)
 
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+
+            Spacer(minLength: 12)
+
+            Toggle(title, isOn: $isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+        }
+        .accessibilityLabel(title)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct CompactInfoRow: View {
+    let title: String
+    let detail: String
+    let systemImage: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: systemImage)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 18, height: 18)
+
+            VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.primary)
+
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+
+            Spacer(minLength: 0)
         }
-        .toggleStyle(.switch)
-        .accessibilityLabel(title)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
+        .background(Color.accentColor.opacity(0.07), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
@@ -468,7 +797,10 @@ private struct GPTModelMenuRow<MenuContent: View>: View {
 
 private struct GPTAPIKeyRow: View {
     @Binding var apiKey: String
+    @Binding var shouldFocusAPIKey: Bool
+    @FocusState private var isAPIKeyFocused: Bool
     let hasAPIKey: Bool
+    let notice: String?
     let save: () -> Void
     let remove: () -> Void
 
@@ -487,6 +819,7 @@ private struct GPTAPIKeyRow: View {
                 SecureField(AppText.openAIAPIKeyPlaceholder, text: $apiKey)
                     .textFieldStyle(.roundedBorder)
                     .font(.caption)
+                    .focused($isAPIKeyFocused)
 
                 Button {
                     save()
@@ -509,6 +842,20 @@ private struct GPTAPIKeyRow: View {
                 .accessibilityLabel(AppText.removeOpenAIAPIKey)
             }
 
+            if let notice, !hasAPIKey {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(Color.orange)
+
+                    Text(notice)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(Color.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.leading, 24)
+            }
+
             Text(hasAPIKey ? AppText.openAIAPIKeyConfigured : AppText.openAIAPIKeyNotConfigured)
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(hasAPIKey ? Color.green : Color.secondary)
@@ -517,6 +864,20 @@ private struct GPTAPIKeyRow: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 7)
         .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .onAppear {
+            focusAPIKeyIfNeeded()
+        }
+        .onChange(of: shouldFocusAPIKey) { _, _ in
+            focusAPIKeyIfNeeded()
+        }
+    }
+
+    private func focusAPIKeyIfNeeded() {
+        guard shouldFocusAPIKey else { return }
+        Task { @MainActor in
+            isAPIKeyFocused = true
+            shouldFocusAPIKey = false
+        }
     }
 }
 

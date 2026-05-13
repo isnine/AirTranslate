@@ -1,3 +1,38 @@
-.build/
-dist/
+# macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Xcode and local IDE state
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.moved-aside
+
+# App build outputs
+dist/
+Release/build/
+Release/product/
+*.xcarchive
+*.dSYM/
+
+# Local Codex/app environment
+.codex/
+
+# Local secrets and signing material
+.env
+.env.*
+!.env.example
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile
+
+# Logs and temporary files
+*.log
+*.tmp
+tmp/

@@ -1,0 +1,178 @@
+![AirTranslate hero](docs/assets/airtranslate-readme-hero.png)
+
+# AirTranslate
+
+macOS용 실시간 시스템 오디오 기록 및 번역 앱.
+
+[![macOS 26+](https://img.shields.io/badge/macOS-26%2B-0A84FF?style=flat-square&logo=apple)](#요구-사항)
+[![Swift 6.2+](https://img.shields.io/badge/Swift-6.2%2B-F05138?style=flat-square&logo=swift&logoColor=white)](#소스에서-빌드)
+[![SwiftPM](https://img.shields.io/badge/SwiftPM-enabled-24292F?style=flat-square)](#프로젝트-구조)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue?style=flat-square)](LICENSE)
+
+**언어:** [English](README.md) | 한국어 | [日本語](README.ja.md) | [中文](README.zh-CN.md)
+
+AirTranslate는 Mac에서 재생되는 소리를 실시간으로 기록하고 번역하며, 필요하면 플로팅 자막 창으로 표시합니다. 회의, 강의, 영상, 인터뷰, 스트림처럼 외부 마이크로 우회하기 애매한 오디오를 Mac 시스템 오디오에서 직접 받아 처리하는 데 초점을 둡니다.
+
+기본 처리 흐름은 Apple 프레임워크를 사용합니다. GPT 기반 realtime 모델은 선택 사항이며, 사용자가 직접 OpenAI API 키를 입력했을 때만 사용할 수 있습니다.
+
+## 왜 AirTranslate인가
+
+- **시스템 오디오 우선:** ScreenCaptureKit으로 Mac 재생음을 직접 캡처합니다.
+- **읽기 좋은 실시간 작업 공간:** 원문과 번역을 나란히 유지합니다.
+- **플로팅 자막:** 다른 앱 위에 자막을 띄워 영상이나 회의를 보며 확인할 수 있습니다.
+- **Apple 기본 처리:** Apple Speech와 Apple Translation을 기본 경로로 유지합니다.
+- **선택형 GPT 모드:** 필요한 경우에만 OpenAI Realtime 전사/번역을 켭니다.
+- **Keychain 저장:** OpenAI API 키는 사용자가 입력하고 macOS Keychain에 저장합니다.
+- **일반 텍스트 기록:** 저장된 기록은 Mac 안의 `.txt` 파일로 남습니다.
+
+## 핵심 기능
+
+- Mac 시스템 오디오 실시간 캡처
+- Apple Speech 기반 전사
+- Apple Translation 기반 번역
+- OpenAI Realtime 기반 GPT 모드
+- 실시간 번역만 수행하는 모델 경로
+- 원문/번역 언어 한 번에 바꾸기
+- 플로팅 자막 창
+- macOS 맞춤법 후보 기반 기록 다듬기
+- 선택형 번역 음성 출력
+- 저장된 기록 확인, 수정, 삭제, 폴더 열기
+- Mac 언어 설정에 맞춘 영어, 한국어, 일본어, 중국어 간체 UI 자동 선택
+
+## 처리 방식
+
+AirTranslate는 빠른 선택과 상세 설정을 분리합니다.
+
+| 모드 | 적합한 경우 | 설명 |
+| --- | --- | --- |
+| Apple 기본 모드 | 로컬 중심 전사와 번역 | Apple Speech로 전사하고 Apple Translation으로 선택한 언어쌍을 번역합니다. |
+| GPT 모드 | OpenAI Realtime 전사 또는 번역 | GPT realtime 모델을 켭니다. 저장된 API 키가 없으면 설정 모달을 열고 API 키 입력칸에 포커스를 둡니다. |
+| 전사만 | 번역 없이 원문 자막만 필요할 때 | Translation 없이 원문 기록만 남깁니다. |
+| 실시간 번역만 | 번역 스트림을 직접 만들고 싶을 때 | realtime translation 모델이 번역 결과를 직접 생성하는 경로를 사용합니다. |
+
+GPT 모델 세부 선택, API 키 입력, 기록 다듬기, 음성 출력은 톱니바퀴 설정 모달에서 관리합니다. 메인 사이드바에는 자주 쓰는 선택만 남깁니다.
+
+## 개인정보와 API 키
+
+AirTranslate는 자체 백엔드 계정 시스템을 포함하지 않습니다.
+
+- Apple 기본 모드는 macOS 프레임워크와 Apple 언어 자산을 사용합니다.
+- GPT 모드 또는 OpenAI 번역 모델을 켰을 때만 OpenAI 요청이 발생합니다.
+- OpenAI API 키는 앱에 하드코딩하거나 커밋하거나 릴리즈 패키지에 포함하지 않습니다.
+- API 키는 `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly` 옵션으로 macOS Keychain에 저장합니다.
+- 저장된 기록은 사용자 Mac의 일반 텍스트 파일입니다.
+
+API 키가 필요하면 [OpenAI API 키 페이지](https://platform.openai.com/api-keys)에서 키를 만든 뒤 AirTranslate 설정 모달에 붙여 넣으세요.
+
+## 필요한 권한
+
+AirTranslate는 캡처와 전사 흐름에 필요한 권한만 요청합니다.
+
+- 화면 기록
+- 시스템 오디오 녹음
+- 음성 인식
+
+ScreenCaptureKit의 시스템 오디오 캡처 경로 때문에 화면 기록 권한이 필요합니다. AirTranslate는 화면 프레임을 녹화 파일로 저장하지 않습니다.
+
+macOS 개인정보 보호 권한을 바꾼 뒤에는 앱을 종료하고 다시 실행해야 새 권한 상태가 안정적으로 반영됩니다.
+
+## 요구 사항
+
+- macOS 26.0 이상
+- Swift 6.2 이상
+- 시스템 오디오 캡처를 지원하는 Mac
+- Apple Speech 및 Apple Translation 프레임워크 사용 가능 환경
+- 선택 사항: GPT 모드용 OpenAI API 키
+
+## 소스에서 빌드
+
+앱 번들 실행:
+
+```bash
+./script/build_and_run.sh
+```
+
+빌드 후 실행 확인:
+
+```bash
+./script/build_and_run.sh --verify
+```
+
+로그 확인:
+
+```bash
+./script/build_and_run.sh --logs
+```
+
+개발 중 권한 초기화:
+
+```bash
+./script/build_and_run.sh --reset-permissions
+```
+
+SwiftPM 확인:
+
+```bash
+swift build
+swift test
+```
+
+## 기본 사용법
+
+1. 원문 언어와 번역 언어를 선택합니다.
+2. 방향을 바꾸고 싶으면 가운데 언어 바꾸기 버튼을 누릅니다.
+3. Apple 기본 모드 또는 GPT 모드를 선택합니다.
+4. GPT 모드에서 안내가 나오면 설정 모달에 OpenAI API 키를 입력합니다.
+5. 시작 버튼을 누릅니다.
+6. Mac에서 회의, 강의, 영상, 인터뷰, 스트림 오디오를 재생합니다.
+7. 메인 작업 공간이나 플로팅 자막 창에서 원문과 번역을 확인합니다.
+8. 중지하면 현재 기록이 저장됩니다.
+
+## 저장된 기록
+
+저장된 기록은 일반 텍스트 파일로 보관됩니다.
+
+```text
+~/Library/Application Support/AirTranslate/Transcripts/*.txt
+```
+
+원문과 번역을 함께 저장할 때는 `_original.txt`, `_translation.txt` 파일로 분리 저장하고, 앱의 저장소 UI에서는 하나의 묶음으로 보여줍니다.
+
+## 프로젝트 구조
+
+```text
+Package.swift
+Resources/
+  AppIcon.png
+  AppIcon.icns
+Sources/AirTranslate/
+  App/
+  Models/
+  Services/
+  Support/
+  Views/
+Sources/AirTranslateCore/
+Tests/
+script/
+  build_and_run.sh
+docs/assets/
+  airtranslate-readme-hero.png
+```
+
+## 핵심 구현 영역
+
+- `SystemAudioCapture`: ScreenCaptureKit으로 Mac 시스템 오디오를 캡처합니다.
+- `LiveSpeechTranscriber`: Apple Speech 기반 전사를 스트리밍합니다.
+- `AppleTranslationService`: Apple Translation 작업을 격리합니다.
+- `OpenAIRealtimeTranscriber`: 선택형 realtime 전사를 처리합니다.
+- `OpenAITranslationService`: 선택형 realtime 번역 요청을 처리합니다.
+- `OpenAIAPIKeyStore`: API 키를 macOS Keychain에 저장합니다.
+- `TranslationSessionStore`: 캡처, 기록 상태, 번역, 저장, 음성 출력을 조율합니다.
+- `SidebarView`: 언어, 처리 방식, 세션, 설정 진입점을 제공합니다.
+- `CaptionBoardView`: 실시간 기록, 번역, 컨트롤, 오디오 미터를 표시합니다.
+- `TranscriptLibraryView`: 저장된 기록 관리를 담당합니다.
+- `FloatingCaptionWindowController`: 플로팅 자막 창 생명주기를 관리합니다.
+
+## 라이선스
+
+AirTranslate는 [Apache License 2.0](LICENSE)로 공개됩니다. 저작권 표기는 [NOTICE](NOTICE)에 있습니다.

@@ -2,41 +2,98 @@ import Foundation
 import Security
 
 enum AppText {
-    static var usesKorean: Bool {
-        Locale.preferredLanguages.first?.hasPrefix("ko") == true
+    private enum InterfaceLanguage {
+        case english
+        case korean
+        case japanese
+        case chineseSimplified
+    }
+
+    private static var interfaceLanguage: InterfaceLanguage {
+        let languageCode = Locale.preferredLanguages.first?.lowercased() ?? ""
+        if languageCode.hasPrefix("ko") {
+            return .korean
+        }
+        if languageCode.hasPrefix("ja") {
+            return .japanese
+        }
+        if languageCode.hasPrefix("zh") {
+            return .chineseSimplified
+        }
+        return .english
     }
 
     static func localized(english: String, korean: String) -> String {
-        usesKorean ? korean : english
+        localized(
+            english: english,
+            korean: korean,
+            japanese: english,
+            chineseSimplified: english
+        )
+    }
+
+    static func localized(
+        english: String,
+        korean: String,
+        japanese: String,
+        chineseSimplified: String
+    ) -> String {
+        switch interfaceLanguage {
+        case .english:
+            english
+        case .korean:
+            korean
+        case .japanese:
+            japanese
+        case .chineseSimplified:
+            chineseSimplified
+        }
     }
 
     static let appName = "AirTranslate"
     static let appTagline = localized(
         english: "Live transcript translator",
-        korean: "실시간 기록 번역"
+        korean: "실시간 기록 번역",
+        japanese: "リアルタイム記録翻訳",
+        chineseSimplified: "实时转写翻译"
     )
-    static let ready = localized(english: "Ready", korean: "준비됨")
-    static let stopped = localized(english: "Stopped", korean: "중지됨")
-    static let paused = localized(english: "Paused", korean: "일시정지됨")
-    static let capture = localized(english: "Capture", korean: "캡처")
-    static let start = localized(english: "Start", korean: "시작")
-    static let stop = localized(english: "Stop", korean: "중지")
-    static let close = localized(english: "Close", korean: "닫기")
-    static let cancel = localized(english: "Cancel", korean: "취소")
-    static let pause = localized(english: "Pause", korean: "일시정지")
-    static let resume = localized(english: "Resume", korean: "재개")
-    static let languages = localized(english: "Languages", korean: "언어")
-    static let from = localized(english: "From", korean: "원문")
-    static let to = localized(english: "To", korean: "번역")
-    static let model = localized(english: "Mode", korean: "처리 방식")
-    static let modelStatusChecking = localized(english: "Checking", korean: "확인 중")
-    static let modelStatusInstalled = localized(english: "Installed", korean: "설치됨")
-    static let modelStatusDownloadRequired = localized(english: "Download Needed", korean: "다운로드 필요")
-    static let modelStatusDownloading = localized(english: "Downloading", korean: "다운로드 중")
-    static let modelStatusUnsupported = localized(english: "Unsupported", korean: "미지원")
-    static let modelStatusUnavailable = localized(english: "Unavailable", korean: "사용 불가")
-    static let modelStatusFailed = localized(english: "Check Failed", korean: "확인 실패")
-    static let download = localized(english: "Download", korean: "다운로드")
+    static let ready = localized(english: "Ready", korean: "준비됨", japanese: "準備完了", chineseSimplified: "就绪")
+    static let stopped = localized(english: "Stopped", korean: "중지됨", japanese: "停止中", chineseSimplified: "已停止")
+    static let paused = localized(english: "Paused", korean: "일시정지됨", japanese: "一時停止中", chineseSimplified: "已暂停")
+    static let capture = localized(english: "Capture", korean: "캡처", japanese: "キャプチャ", chineseSimplified: "捕获")
+    static let start = localized(english: "Start", korean: "시작", japanese: "開始", chineseSimplified: "开始")
+    static let stop = localized(english: "Stop", korean: "중지", japanese: "停止", chineseSimplified: "停止")
+    static let close = localized(english: "Close", korean: "닫기", japanese: "閉じる", chineseSimplified: "关闭")
+    static let cancel = localized(english: "Cancel", korean: "취소", japanese: "キャンセル", chineseSimplified: "取消")
+    static let pause = localized(english: "Pause", korean: "일시정지", japanese: "一時停止", chineseSimplified: "暂停")
+    static let resume = localized(english: "Resume", korean: "재개", japanese: "再開", chineseSimplified: "继续")
+    static let languages = localized(english: "Languages", korean: "언어", japanese: "言語", chineseSimplified: "语言")
+    static let from = localized(english: "From", korean: "원문", japanese: "原文", chineseSimplified: "原文")
+    static let to = localized(english: "To", korean: "번역", japanese: "翻訳", chineseSimplified: "译文")
+    static let autoDetectShort = localized(english: "Auto", korean: "자동", japanese: "自動", chineseSimplified: "自动")
+    static let autoDetectInput = localized(
+        english: "Auto-detect input",
+        korean: "입력 언어 자동 감지",
+        japanese: "入力言語を自動検出",
+        chineseSimplified: "自动检测输入语言"
+    )
+    static let preferredLanguageShort = localized(english: "Pref.", korean: "선호", japanese: "優先", chineseSimplified: "首选")
+    static let preferredLanguage = localized(
+        english: "Preferred language",
+        korean: "선호 언어",
+        japanese: "優先言語",
+        chineseSimplified: "首选语言"
+    )
+    static let swapLanguages = localized(english: "Swap Languages", korean: "언어 바꾸기", japanese: "言語を入れ替え", chineseSimplified: "交换语言")
+    static let model = localized(english: "Mode", korean: "처리 방식", japanese: "処理方式", chineseSimplified: "处理方式")
+    static let modelStatusChecking = localized(english: "Checking", korean: "확인 중", japanese: "確認中", chineseSimplified: "正在检查")
+    static let modelStatusInstalled = localized(english: "Installed", korean: "설치됨", japanese: "インストール済み", chineseSimplified: "已安装")
+    static let modelStatusDownloadRequired = localized(english: "Download Needed", korean: "다운로드 필요", japanese: "ダウンロードが必要", chineseSimplified: "需要下载")
+    static let modelStatusDownloading = localized(english: "Downloading", korean: "다운로드 중", japanese: "ダウンロード中", chineseSimplified: "正在下载")
+    static let modelStatusUnsupported = localized(english: "Unsupported", korean: "미지원", japanese: "未対応", chineseSimplified: "不支持")
+    static let modelStatusUnavailable = localized(english: "Unavailable", korean: "사용 불가", japanese: "利用不可", chineseSimplified: "不可用")
+    static let modelStatusFailed = localized(english: "Check Failed", korean: "확인 실패", japanese: "確認失敗", chineseSimplified: "检查失败")
+    static let download = localized(english: "Download", korean: "다운로드", japanese: "ダウンロード", chineseSimplified: "下载")
     static let downloadModelAssets = localized(
         english: "Download model assets",
         korean: "모델 자산 다운로드"
@@ -57,10 +114,12 @@ enum AppText {
     )
     static let openAIAPIKeyPlaceholder = localized(
         english: "Paste API key",
-        korean: "API 키 붙여넣기"
+        korean: "API 키 붙여넣기",
+        japanese: "APIキーを貼り付け",
+        chineseSimplified: "粘贴 API key"
     )
-    static let saveOpenAIAPIKey = localized(english: "Save API Key", korean: "API 키 저장")
-    static let removeOpenAIAPIKey = localized(english: "Remove API Key", korean: "API 키 삭제")
+    static let saveOpenAIAPIKey = localized(english: "Save API Key", korean: "API 키 저장", japanese: "APIキーを保存", chineseSimplified: "保存 API key")
+    static let removeOpenAIAPIKey = localized(english: "Remove API Key", korean: "API 키 삭제", japanese: "APIキーを削除", chineseSimplified: "删除 API key")
     static let openAIAPIKeySaved = localized(
         english: "OpenAI API key saved in Keychain.",
         korean: "OpenAI API 키가 Keychain에 저장되었습니다."
@@ -71,15 +130,25 @@ enum AppText {
     )
     static let openAIAPIKeyConfigured = localized(
         english: "API key saved",
-        korean: "API 키 저장됨"
+        korean: "API 키 저장됨",
+        japanese: "APIキー保存済み",
+        chineseSimplified: "API key 已保存"
     )
     static let openAIAPIKeyNotConfigured = localized(
         english: "API key required",
-        korean: "API 키 필요"
+        korean: "API 키 필요",
+        japanese: "APIキーが必要",
+        chineseSimplified: "需要 API key"
     )
     static let openAIAPIKeyMissing = localized(
         english: "Add an OpenAI API key in Settings before using OpenAI Translation.",
         korean: "OpenAI 번역을 사용하려면 설정에서 OpenAI API 키를 먼저 입력하세요."
+    )
+    static let openAIAPIKeyRequiredForGPTMode = localized(
+        english: "Enter an OpenAI API key to use GPT mode.",
+        korean: "GPT 모드를 사용하려면 OpenAI API 키를 입력하세요.",
+        japanese: "GPTモードを使うにはOpenAI APIキーを入力してください。",
+        chineseSimplified: "要使用 GPT 模式，请输入 OpenAI API key。"
     )
     static let openAIAPIKeyEmpty = localized(
         english: "Enter an OpenAI API key before saving.",
@@ -89,39 +158,85 @@ enum AppText {
         english: "The stored OpenAI API key could not be read.",
         korean: "저장된 OpenAI API 키를 읽을 수 없습니다."
     )
-    static let appleProcessingMode = localized(english: "Apple Mode", korean: "Apple 기본 모드")
+    static let appleProcessingMode = localized(english: "Apple Mode", korean: "Apple 기본 모드", japanese: "Apple標準モード", chineseSimplified: "Apple 默认模式")
     static let appleProcessingModeDescription = localized(
         english: "The default local workflow. Keep this as the base, then add OpenAI Realtime below only when needed.",
         korean: "기본 로컬 처리 흐름입니다. 이 설정을 기준으로 두고, 필요한 경우 아래 OpenAI Realtime만 추가하세요."
     )
-    static let gptModels = localized(english: "OpenAI Realtime", korean: "OpenAI Realtime")
+    static let gptModels = localized(english: "OpenAI Realtime", korean: "OpenAI Realtime", japanese: "OpenAI Realtime", chineseSimplified: "OpenAI Realtime")
     static let gptTranscriptionModel = localized(
         english: "Transcription",
-        korean: "전사"
+        korean: "전사",
+        japanese: "文字起こし",
+        chineseSimplified: "转写"
     )
     static let gptTranslationModel = localized(
         english: "Auto Translation",
-        korean: "자동번역"
+        korean: "자동번역",
+        japanese: "自動翻訳",
+        chineseSimplified: "自动翻译"
     )
     static let gptModelsDescription = localized(
-        english: "Optional add-on models. Choose translation only when you want gpt-realtime-translate to produce the translated stream directly.",
-        korean: "선택형 추가 모델입니다. gpt-realtime-translate가 번역 스트림을 바로 만들게 하려면 실시간 번역만을 선택하세요."
+        english: "GPT mode uses OpenAI Realtime directly for the translated stream and bypasses local transcript cleanup.",
+        korean: "GPT 모드는 OpenAI Realtime의 번역 스트림을 직접 사용하며 로컬 기록 다듬기를 건너뜁니다."
+    )
+    static let openAINativeOutput = localized(
+        english: "OpenAI native output",
+        korean: "OpenAI 본연의 출력",
+        japanese: "OpenAIネイティブ出力",
+        chineseSimplified: "OpenAI 原生输出"
+    )
+    static let openAINativeOutputDescription = localized(
+        english: "Transcript cleanup is disabled in GPT mode so the realtime API output is shown as-is.",
+        korean: "GPT 모드에서는 실시간 API 결과를 그대로 보여주도록 기록 다듬기를 사용하지 않습니다.",
+        japanese: "GPTモードではリアルタイムAPIの出力をそのまま表示するため、記録の整形は使いません。",
+        chineseSimplified: "GPT 模式会直接显示实时 API 输出，不使用记录润色。"
+    )
+    static let openAILanguageModeDescription = localized(
+        english: "OpenAI detects the input language and translates it to your preferred language.",
+        korean: "OpenAI가 입력 언어를 자동 감지하고 선호 언어로 번역합니다.",
+        japanese: "OpenAIが入力言語を自動検出し、優先言語へ翻訳します。",
+        chineseSimplified: "OpenAI 会自动检测输入语言并翻译为首选语言。"
+    )
+    static let translatedVoiceOutput = localized(
+        english: "GPT translated voice",
+        korean: "GPT 번역 음성",
+        japanese: "翻訳音声",
+        chineseSimplified: "译文语音"
+    )
+    static let translatedVoiceOutputDescription = localized(
+        english: "Play OpenAI's translated audio stream directly.",
+        korean: "OpenAI 번역 음성 스트림을 직접 재생합니다.",
+        japanese: "OpenAIの翻訳音声ストリームを直接再生します。",
+        chineseSimplified: "直接播放 OpenAI 翻译语音流。"
+    )
+    static let openAIAPIKeyPlatformPrompt = localized(
+        english: "No API key yet?",
+        korean: "API 키가 없다면",
+        japanese: "APIキーがない場合",
+        chineseSimplified: "还没有 API key？"
+    )
+    static let openAIAPIKeyPlatformLink = localized(
+        english: "Open OpenAI API Platform",
+        korean: "OpenAI API 플랫폼 열기",
+        japanese: "OpenAI API Platformを開く",
+        chineseSimplified: "打开 OpenAI API 平台"
     )
     static let openAIRealtimeTranslationOnlySource = localized(
         english: "OpenAI realtime translation",
         korean: "OpenAI 실시간 번역"
     )
-    static let output = localized(english: "Output", korean: "출력")
-    static let translationSettings = localized(english: "Translation Settings", korean: "번역 설정")
+    static let output = localized(english: "Output", korean: "출력", japanese: "出力", chineseSimplified: "输出")
+    static let translationSettings = localized(english: "Translation Settings", korean: "번역 설정", japanese: "翻訳設定", chineseSimplified: "翻译设置")
     static let configureTranslationSettings = localized(
         english: "Configure Translation Settings",
         korean: "번역 설정 구성"
     )
-    static let transcript = localized(english: "Transcript", korean: "기록")
-    static let liveOutput = localized(english: "Live Output", korean: "실시간 출력")
-    static let library = localized(english: "Library", korean: "저장소")
-    static let dubbing = localized(english: "Dubbing", korean: "더빙")
-    static let voiceOutput = localized(english: "Voice Output", korean: "음성 출력")
+    static let transcript = localized(english: "Transcript", korean: "기록", japanese: "記録", chineseSimplified: "记录")
+    static let liveOutput = localized(english: "Live Output", korean: "실시간 출력", japanese: "リアルタイム出力", chineseSimplified: "实时输出")
+    static let library = localized(english: "Library", korean: "저장소", japanese: "ライブラリ", chineseSimplified: "资料库")
+    static let dubbing = localized(english: "Dubbing", korean: "더빙", japanese: "音声出力", chineseSimplified: "配音")
+    static let voiceOutput = localized(english: "Voice Output", korean: "음성 출력", japanese: "音声出力", chineseSimplified: "语音输出")
     static let menuBarTitle = localized(english: "Captions", korean: "자막")
     static let menuBarRunningTitle = localized(english: "Live", korean: "기록 중")
     static let menuBarPausedTitle = localized(english: "Paused", korean: "일시정지")
@@ -139,19 +254,19 @@ enum AppText {
     )
     static let floatingTextSize = localized(english: "Floating Text Size", korean: "플로팅 글자 크기")
     static let floatingLineCount = localized(english: "Floating Lines", korean: "플로팅 표시 줄 수")
-    static let originalOnly = localized(english: "Original", korean: "원문")
-    static let originalAndTranslation = localized(english: "Original + Translation", korean: "원문 + 번역")
-    static let translationOnly = localized(english: "Translation", korean: "번역")
-    static let textSizeSmall = localized(english: "Small", korean: "작게")
-    static let textSizeMedium = localized(english: "Medium", korean: "보통")
-    static let textSizeLarge = localized(english: "Large", korean: "크게")
-    static let textSizeExtraLarge = localized(english: "Extra Large", korean: "아주 크게")
+    static let originalOnly = localized(english: "Original", korean: "원문", japanese: "原文", chineseSimplified: "原文")
+    static let originalAndTranslation = localized(english: "Original + Translation", korean: "원문 + 번역", japanese: "原文 + 翻訳", chineseSimplified: "原文 + 译文")
+    static let translationOnly = localized(english: "Translation", korean: "번역", japanese: "翻訳", chineseSimplified: "译文")
+    static let textSizeSmall = localized(english: "Small", korean: "작게", japanese: "小", chineseSimplified: "小")
+    static let textSizeMedium = localized(english: "Medium", korean: "보통", japanese: "中", chineseSimplified: "中")
+    static let textSizeLarge = localized(english: "Large", korean: "크게", japanese: "大", chineseSimplified: "大")
+    static let textSizeExtraLarge = localized(english: "Extra Large", korean: "아주 크게", japanese: "特大", chineseSimplified: "特大")
     static let noFloatingCaptionsYet = localized(
         english: "Live captions will appear here.",
         korean: "실시간 자막이 여기에 표시됩니다."
     )
-    static let transcriptLint = localized(english: "Transcript Word Lint", korean: "기록 단어 다듬기")
-    static let transcriptPolish = localized(english: "Transcript Polish", korean: "기록 다듬기")
+    static let transcriptLint = localized(english: "Transcript Word Lint", korean: "기록 단어 다듬기", japanese: "記録単語の補正", chineseSimplified: "记录词语修正")
+    static let transcriptPolish = localized(english: "Transcript Polish", korean: "기록 다듬기", japanese: "記録を整える", chineseSimplified: "整理记录")
     static let transcriptLintDescription = localized(
         english: "During silence, conservatively fixes transcription words when macOS spelling suggestions are confident. It does not remove repeated sentences or transcript content.",
         korean: "침묵 시간에 macOS 맞춤법 후보가 확실한 기록 단어만 보수적으로 고칩니다. 반복 문장이나 기록 내용은 제거하지 않습니다."
@@ -164,9 +279,9 @@ enum AppText {
         english: "When speech resumes after this much silence, the transcript starts a new paragraph.",
         korean: "이 시간만큼 말이 멈춘 뒤 다시 시작되면 기록을 새 문단으로 나눕니다."
     )
-    static let sessionLength = localized(english: "Session Length", korean: "세션 길이")
-    static let sessionLengthStandard = localized(english: "Standard", korean: "일반")
-    static let sessionLengthThirtyMinutesOrMore = localized(english: "30+ minutes", korean: "30분 이상")
+    static let sessionLength = localized(english: "Session Length", korean: "세션 길이", japanese: "セッション長", chineseSimplified: "会话时长")
+    static let sessionLengthStandard = localized(english: "Standard", korean: "일반", japanese: "標準", chineseSimplified: "标准")
+    static let sessionLengthThirtyMinutesOrMore = localized(english: "30+ minutes", korean: "30분 이상", japanese: "30分以上", chineseSimplified: "30 分钟以上")
     static let sessionLengthStandardDescription = localized(
         english: "Keeps live updates as immediate as possible for short sessions.",
         korean: "짧은 세션에서 실시간 반응성을 최대한 유지합니다."
@@ -175,7 +290,7 @@ enum AppText {
         english: "Uses long-session safeguards: less frequent full-text UI updates, delayed translation bursts, and tail rendering for very long transcripts.",
         korean: "긴 세션 보호 모드를 사용합니다. 전체 텍스트 화면 갱신과 번역 폭주를 줄이고, 아주 긴 기록은 최근 부분만 렌더링합니다."
     )
-    static let savedTranscripts = localized(english: "Saved Transcripts", korean: "저장된 기록")
+    static let savedTranscripts = localized(english: "Saved Transcripts", korean: "저장된 기록", japanese: "保存済み記録", chineseSimplified: "已保存记录")
     static let savedTranscriptContent = localized(
         english: "Saved Content",
         korean: "저장 내용"
@@ -195,7 +310,9 @@ enum AppText {
     )
     static let manageSavedTranscripts = localized(
         english: "Manage Saved Transcripts",
-        korean: "저장된 기록 관리"
+        korean: "저장된 기록 관리",
+        japanese: "保存済み記録を管理",
+        chineseSimplified: "管理已保存记录"
     )
     static let librarySummary = localized(
         english: "Review, edit, delete, or open saved transcript files in a focused library window.",
@@ -331,6 +448,15 @@ enum AppText {
         localized(english: "\(source) to \(target)", korean: "\(source) → \(target)")
     }
 
+    static func openAILanguageSummary(target: String) -> String {
+        localized(
+            english: "Auto-detect to \(target)",
+            korean: "자동 감지 → \(target)",
+            japanese: "自動検出 → \(target)",
+            chineseSimplified: "自动检测 → \(target)"
+        )
+    }
+
     static func lineCount(_ count: Int) -> String {
         localized(english: "\(count) lines", korean: "\(count)줄")
     }
@@ -464,19 +590,19 @@ enum AppText {
     static func languageTitle(for id: String, fallback: String) -> String {
         switch id {
         case "en-US":
-            localized(english: "English", korean: "영어")
+            localized(english: "English", korean: "영어", japanese: "英語", chineseSimplified: "英语")
         case "ko-KR":
-            localized(english: "Korean", korean: "한국어")
+            localized(english: "Korean", korean: "한국어", japanese: "韓国語", chineseSimplified: "韩语")
         case "ja-JP":
-            localized(english: "Japanese", korean: "일본어")
+            localized(english: "Japanese", korean: "일본어", japanese: "日本語", chineseSimplified: "日语")
         case "zh-CN":
-            localized(english: "Chinese Simplified", korean: "중국어 간체")
+            localized(english: "Chinese Simplified", korean: "중국어 간체", japanese: "簡体字中国語", chineseSimplified: "简体中文")
         case "es-ES":
-            localized(english: "Spanish", korean: "스페인어")
+            localized(english: "Spanish", korean: "스페인어", japanese: "スペイン語", chineseSimplified: "西班牙语")
         case "fr-FR":
-            localized(english: "French", korean: "프랑스어")
+            localized(english: "French", korean: "프랑스어", japanese: "フランス語", chineseSimplified: "法语")
         case "de-DE":
-            localized(english: "German", korean: "독일어")
+            localized(english: "German", korean: "독일어", japanese: "ドイツ語", chineseSimplified: "德语")
         default:
             fallback
         }

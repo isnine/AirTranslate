@@ -16,17 +16,23 @@ enum IntelligenceModel: String, CaseIterable, Identifiable {
         case .appleSystem:
             AppText.localized(
                 english: "Live Transcription + Translation",
-                korean: "실시간 전사 + 번역"
+                korean: "실시간 전사 + 번역",
+                japanese: "リアルタイム文字起こし + 翻訳",
+                chineseSimplified: "实时转写 + 翻译"
             )
         case .appleOnDevice:
             AppText.localized(
                 english: "Translation Language Pack",
-                korean: "번역 언어팩"
+                korean: "번역 언어팩",
+                japanese: "翻訳言語パック",
+                chineseSimplified: "翻译语言包"
             )
         case .appleSpeechOnly:
             AppText.localized(
                 english: "Transcribe Only",
-                korean: "전사만"
+                korean: "전사만",
+                japanese: "文字起こしのみ",
+                chineseSimplified: "仅转写"
             )
         }
     }
@@ -36,17 +42,23 @@ enum IntelligenceModel: String, CaseIterable, Identifiable {
         case .appleSystem:
             AppText.localized(
                 english: "Live transcription with SpeechTranscriber, then TranslationSession for the selected language pair.",
-                korean: "SpeechTranscriber로 실시간 전사한 뒤 선택한 언어쌍을 TranslationSession으로 번역합니다."
+                korean: "SpeechTranscriber로 실시간 전사한 뒤 선택한 언어쌍을 TranslationSession으로 번역합니다.",
+                japanese: "SpeechTranscriberでリアルタイム文字起こしを行い、選択した言語ペアをTranslationSessionで翻訳します。",
+                chineseSimplified: "使用 SpeechTranscriber 实时转写，然后用 TranslationSession 翻译所选语言对。"
             )
         case .appleOnDevice:
             AppText.localized(
                 english: "Checks the installed Apple Translation language assets for the selected source and target languages.",
-                korean: "선택한 원문/번역 언어쌍의 Apple 번역 언어 자산 설치 상태를 확인합니다."
+                korean: "선택한 원문/번역 언어쌍의 Apple 번역 언어 자산 설치 상태를 확인합니다.",
+                japanese: "選択した原文/翻訳言語ペアのApple翻訳言語アセットのインストール状態を確認します。",
+                chineseSimplified: "检查所选原文/译文语言对的 Apple 翻译语言资源安装状态。"
             )
         case .appleSpeechOnly:
             AppText.localized(
                 english: "Uses SpeechTranscriber for source-language captions only, without TranslationSession.",
-                korean: "TranslationSession 없이 SpeechTranscriber만 사용해 원문 자막을 기록합니다."
+                korean: "TranslationSession 없이 SpeechTranscriber만 사용해 원문 자막을 기록합니다.",
+                japanese: "TranslationSessionを使わず、SpeechTranscriberだけで原文字幕を記録します。",
+                chineseSimplified: "不使用 TranslationSession，仅用 SpeechTranscriber 记录原文字幕。"
             )
         }
     }
@@ -54,7 +66,9 @@ enum IntelligenceModel: String, CaseIterable, Identifiable {
     var checkingDetail: String {
         AppText.localized(
             english: "Checking local assets for \(title)...",
-            korean: "\(title) 로컬 자산을 확인하는 중입니다..."
+            korean: "\(title) 로컬 자산을 확인하는 중입니다...",
+            japanese: "\(title) のローカルアセットを確認中...",
+            chineseSimplified: "正在检查 \(title) 的本地资源..."
         )
     }
 }
@@ -68,7 +82,7 @@ enum OpenAIRealtimeTranscriptionModel: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .off:
-            AppText.localized(english: "Use Apple Speech", korean: "Apple Speech 사용")
+            AppText.localized(english: "Use Apple Speech", korean: "Apple Speech 사용", japanese: "Apple Speechを使用", chineseSimplified: "使用 Apple Speech")
         case .gptRealtimeWhisper:
             "gpt-realtime-whisper"
         }
@@ -89,13 +103,15 @@ enum OpenAIRealtimeTranslationModel: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .off:
-            AppText.localized(english: "Use Apple Translation", korean: "Apple Translation 사용")
+            AppText.localized(english: "Use Apple Translation", korean: "Apple Translation 사용", japanese: "Apple Translationを使用", chineseSimplified: "使用 Apple Translation")
         case .gptRealtimeTranslate:
             "gpt-realtime-translate"
         case .gptRealtimeTranslateOnly:
             AppText.localized(
                 english: "gpt-realtime-translate · translation only",
-                korean: "gpt-realtime-translate · 실시간 번역만"
+                korean: "gpt-realtime-translate · 실시간 번역만",
+                japanese: "gpt-realtime-translate · 翻訳のみ",
+                chineseSimplified: "gpt-realtime-translate · 仅翻译"
             )
         }
     }
@@ -105,7 +121,7 @@ enum OpenAIRealtimeTranslationModel: String, CaseIterable, Identifiable {
     }
 
     var usesRealtimeAudioTranslation: Bool {
-        self == .gptRealtimeTranslateOnly
+        self != .off
     }
 
     var apiModelID: String {

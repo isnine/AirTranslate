@@ -54,7 +54,11 @@ final class TranslationSessionStore {
         didSet {
             persistSelectedSettings()
             if isDubbingEnabled {
-                primeDubbingBaselineToCurrentTranslation()
+                if isUsingOpenAIRealtimeTranslation {
+                    openAIRealtimeAudioOutput.stop()
+                } else {
+                    primeDubbingBaselineToCurrentTranslation()
+                }
             } else {
                 stopSpeaking()
                 lastSpokenTranslatedText = ""
@@ -89,6 +93,9 @@ final class TranslationSessionStore {
     var hasOpenAIAPIKey = OpenAIAPIKeyStore.hasAPIKey()
     var openAITranscriptionModel = OpenAIRealtimeTranscriptionModel.off {
         didSet {
+            if openAITranscriptionModel.isEnabled {
+                isTranscriptLintEnabled = false
+            }
             persistSelectedSettings()
             resetTranslationCache()
             refreshModelAvailability()
@@ -96,6 +103,9 @@ final class TranslationSessionStore {
     }
     var openAITranslationModel = OpenAIRealtimeTranslationModel.off {
         didSet {
+            if openAITranslationModel.isEnabled {
+                isTranscriptLintEnabled = false
+            }
             persistSelectedSettings()
             resetTranslationCache()
             resetDubbingProgress()
@@ -146,6 +156,7 @@ final class TranslationSessionStore {
     private let openAITranslator = OpenAITranslationService()
     private let foundationTranscriptPolisher = FoundationTranscriptPolisher()
     private let speechOutput = TranslatedSpeechOutput()
+    private let openAIRealtimeAudioOutput = OpenAIRealtimeAudioOutput()
     private let spellChecker = NSSpellChecker.shared
     private let spellDocumentTag = NSSpellChecker.uniqueSpellDocumentTag()
     private var audioSampleCount = 0
@@ -170,6 +181,7 @@ final class TranslationSessionStore {
     private var floatingQueuedSourceText = ""
     private var floatingPresentedAt = Date.distantPast
     private var floatingDisplayTranslationText = ""
+    private var floatingDisplayTranslationSourceText = ""
     private var floatingQueuedTranslationText = ""
     private var floatingQueuedTranslationSourceText = ""
     private var floatingPresentationTask: Task<Void, Never>?
@@ -193,6 +205,14 @@ final class TranslationSessionStore {
 
     private var usesLongSessionMode: Bool {
         sessionDurationMode == .thirtyMinutesOrMore
+    }
+
+    var isUsingOpenAIRealtime: Bool {
+        openAITranscriptionModel.isEnabled || openAITranslationModel.isEnabled
+    }
+
+    var isUsingOpenAIRealtimeTranslation: Bool {
+        openAITranslationModel.usesRealtimeAudioTranslation
     }
 
     private struct SavedTranscriptFile {
@@ -230,7 +250,9 @@ final class TranslationSessionStore {
                 statusMessage = AppText.checkingSpeechPermission
                 try await startCaptioners()
                 statusMessage = AppText.startingCapture
-                try await capture.start(sampleRate: openAITranscriptionModel.isEnabled ? 24_000 : 16_000)
+                let usesOpenAIRealtimeAudio = openAITranscriptionModel.isEnabled
+                    || openAITranslationModel.usesRealtimeAudioTranslation
+                try await capture.start(sampleRate: usesOpenAIRealtimeAudio ? 24_000 : 16_000)
                 statusMessage = AppText.listeningForSpeech
                 warmTranslationSession()
             } catch {
@@ -332,7 +354,17 @@ final class TranslationSessionStore {
     }
 
     var languageSummary: String {
-        AppText.languageSummary(source: sourceLanguage.localizedTitle, target: targetLanguage.localizedTitle)
+        if isUsingOpenAIRealtimeTranslation {
+            return AppText.openAILanguageSummary(target: targetLanguage.localizedTitle)
+        }
+        return AppText.languageSummary(source: sourceLanguage.localizedTitle, target: targetLanguage.localizedTitle)
+    }
+
+    func usePreferredLanguageForOpenAIOutput() {
+        let preferredLanguage = LanguageOption.preferredSystemLanguage(fallback: targetLanguage)
+        if targetLanguage != preferredLanguage {
+            targetLanguage = preferredLanguage
+        }
     }
 
     func modelAvailability(for model: IntelligenceModel) -> ModelAvailability {
@@ -385,6 +417,11 @@ final class TranslationSessionStore {
         if !displaySourceText.isEmpty {
             let translatedText = floatingDisplayTranslationText.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !translatedText.isEmpty, translatedText != AppText.translating else {
+                return ""
+            }
+            guard floatingDisplayTranslationSourceText.isEmpty
+                || translationSource(floatingDisplayTranslationSourceText, matches: displaySourceText)
+            else {
                 return ""
             }
 
@@ -577,6 +614,7 @@ final class TranslationSessionStore {
             floatingQueuedSourceText = ""
             floatingPresentedAt = Date.distantPast
             floatingDisplayTranslationText = ""
+            floatingDisplayTranslationSourceText = ""
             floatingQueuedTranslationText = ""
             floatingQueuedTranslationSourceText = ""
         } else {
@@ -1276,7 +1314,9 @@ final class TranslationSessionStore {
     }
 
     private func commitCurrentPartial() {
-        let partial = organizeTranscript(currentPartialText, language: sourceLanguage)
+        let partial = isUsingOpenAIRealtime
+            ? currentPartialText.trimmingCharacters(in: .whitespacesAndNewlines)
+            : organizeTranscript(currentPartialText, language: sourceLanguage)
         guard !partial.isEmpty else { return }
 
         var didAppendCommittedPartial = false
@@ -1353,6 +1393,7 @@ final class TranslationSessionStore {
             floatingQueuedSourceText = ""
             floatingPresentedAt = Date.distantPast
             floatingDisplayTranslationText = ""
+            floatingDisplayTranslationSourceText = ""
             floatingQueuedTranslationText = ""
             floatingQueuedTranslationSourceText = ""
             return
@@ -1361,15 +1402,21 @@ final class TranslationSessionStore {
         floatingCommittedSourceText = line.sourceText
         floatingCurrentPartialText = ""
         pendingFloatingParagraphBreakBeforePartial = false
-        floatingPresentedSourceText = line.sourceText
+        floatingPresentedSourceText = isUsingOpenAIRealtime
+            ? realtimeFloatingCaptionText(from: line.sourceText)
+            : line.sourceText
         floatingQueuedSourceText = ""
         floatingPresentedAt = Date()
 
         let translatedText = line.translatedText.trimmingCharacters(in: .whitespacesAndNewlines)
         if translatedText.isEmpty || translatedText == AppText.translating {
             floatingDisplayTranslationText = ""
+            floatingDisplayTranslationSourceText = ""
         } else {
-            floatingDisplayTranslationText = translatedText
+            floatingDisplayTranslationText = isUsingOpenAIRealtime
+                ? realtimeFloatingCaptionText(from: translatedText)
+                : translatedText
+            floatingDisplayTranslationSourceText = floatingPresentedSourceText
         }
         floatingQueuedTranslationText = ""
         floatingQueuedTranslationSourceText = ""
@@ -1435,6 +1482,11 @@ final class TranslationSessionStore {
         floatingPresentedSourceText = text
         floatingQueuedSourceText = ""
         floatingPresentedAt = Date()
+        if !floatingDisplayTranslationSourceText.isEmpty,
+           !translationSource(floatingDisplayTranslationSourceText, matches: text) {
+            floatingDisplayTranslationText = ""
+            floatingDisplayTranslationSourceText = ""
+        }
         promoteQueuedFloatingTranslationIfPossible()
     }
 
@@ -1513,6 +1565,15 @@ final class TranslationSessionStore {
         TranscriptTextProcessor.transcriptText(from: units)
     }
 
+    private func realtimeFloatingCaptionText(from text: String) -> String {
+        let units = transcriptUnits(from: text)
+        guard let latestUnit = units.last else {
+            return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        return latestUnit.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private func normalizedTranscriptForComparison(_ text: String) -> String {
         TranscriptTextProcessor.normalizedForComparison(text)
     }
@@ -1536,6 +1597,13 @@ final class TranslationSessionStore {
         let committed = floatingCommittedSourceText.trimmingCharacters(in: .whitespacesAndNewlines)
         let partial = floatingCurrentPartialText.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        if isUsingOpenAIRealtime {
+            if !partial.isEmpty {
+                return realtimeFloatingCaptionText(from: partial)
+            }
+            return realtimeFloatingCaptionText(from: committed)
+        }
+
         guard !committed.isEmpty else {
             return partial
         }
@@ -1549,6 +1617,7 @@ final class TranslationSessionStore {
 
     private func scheduleTranscriptCleanup() {
         guard isRunning, currentLineID != nil else { return }
+        guard !isUsingOpenAIRealtime else { return }
         guard Date().timeIntervalSince(lastRecognitionAt) > 1.5 else { return }
 
         transcriptCleanupTask?.cancel()
@@ -1559,6 +1628,8 @@ final class TranslationSessionStore {
     }
 
     private func organizeCurrentTranscript(sourceTextOverride: String? = nil) {
+        guard !isUsingOpenAIRealtime else { return }
+
         if sourceTextOverride == nil {
             flushPendingCaptionPresentation()
         }
@@ -1877,25 +1948,23 @@ final class TranslationSessionStore {
     private func appendRealtimeTranslationOnly(_ text: String) {
         guard isRunning, !isPaused else { return }
 
-        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedText.isEmpty else { return }
-        guard trimmedText != lastRecognizedText else { return }
+        guard text.rangeOfCharacter(from: .whitespacesAndNewlines.inverted) != nil
+            || !realtimeTranslationOnlyText.isEmpty else { return }
 
-        if trimmedText.hasPrefix(realtimeTranslationOnlyText) {
-            realtimeTranslationOnlyText = trimmedText
-        } else if !realtimeTranslationOnlyText.hasSuffix(trimmedText) {
-            realtimeTranslationOnlyText = [realtimeTranslationOnlyText, trimmedText]
-                .filter { !$0.isEmpty }
-                .joined(separator: " ")
+        if text.hasPrefix(realtimeTranslationOnlyText) {
+            realtimeTranslationOnlyText = text
+        } else if !realtimeTranslationOnlyText.hasSuffix(text) {
+            realtimeTranslationOnlyText += text
         }
-        guard !realtimeTranslationOnlyText.isEmpty else { return }
 
-        lastRecognizedText = trimmedText
+        let translatedText = realtimeTranslationOnlyText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !translatedText.isEmpty else { return }
+
+        lastRecognizedText = translatedText
         lastRecognitionAt = Date()
         transcriptCleanupTask?.cancel()
 
         let sourceText = AppText.openAIRealtimeTranslationOnlySource
-        let translatedText = organizeTranscript(realtimeTranslationOnlyText, language: targetLanguage)
 
         if let currentLineID,
            let index = lines.firstIndex(where: { $0.id == currentLineID }) {
@@ -1925,7 +1994,10 @@ final class TranslationSessionStore {
         }
 
         stageTranscriptForSave(sourceText, translatedText: translatedText)
-        updateFloatingTranslationPresentation(translatedText, sourceText: sourceText)
+        let floatingTranslatedText = isUsingOpenAIRealtimeTranslation
+            ? text.trimmingCharacters(in: .whitespacesAndNewlines)
+            : translatedText
+        updateFloatingTranslationPresentation(floatingTranslatedText, sourceText: sourceText)
         speakTranslatedDeltaIfNeeded(translatedText)
     }
 
@@ -2037,26 +2109,35 @@ final class TranslationSessionStore {
     }
 
     private func updateFloatingTranslationPresentation(_ translatedText: String, sourceText: String) {
-        guard !translatedText.isEmpty,
-              translatedText != AppText.translating
+        let displaySourceText = isUsingOpenAIRealtime
+            ? realtimeFloatingCaptionText(from: sourceText)
+            : sourceText
+        let displayTranslatedText = isUsingOpenAIRealtime
+            ? realtimeFloatingCaptionText(from: translatedText)
+            : translatedText
+
+        guard !displaySourceText.isEmpty,
+              !displayTranslatedText.isEmpty,
+              displayTranslatedText != AppText.translating
         else {
             return
         }
 
-        if shouldUpdateFloatingTranslationDisplay(for: sourceText) {
+        if shouldUpdateFloatingTranslationDisplay(for: displaySourceText) {
             if floatingDisplayTranslationText.isEmpty || canAdvanceFloatingPresentation() {
-                floatingDisplayTranslationText = translatedText
+                floatingDisplayTranslationText = displayTranslatedText
+                floatingDisplayTranslationSourceText = displaySourceText
             } else {
-                floatingQueuedTranslationText = translatedText
-                floatingQueuedTranslationSourceText = sourceText
+                floatingQueuedTranslationText = displayTranslatedText
+                floatingQueuedTranslationSourceText = displaySourceText
                 scheduleFloatingPresentationAdvance()
             }
             return
         }
 
-        if shouldUpdateQueuedFloatingTranslationDisplay(for: sourceText) {
-            floatingQueuedTranslationText = translatedText
-            floatingQueuedTranslationSourceText = sourceText
+        if shouldUpdateQueuedFloatingTranslationDisplay(for: displaySourceText) {
+            floatingQueuedTranslationText = displayTranslatedText
+            floatingQueuedTranslationSourceText = displaySourceText
             scheduleFloatingPresentationAdvance()
         }
     }
@@ -2072,6 +2153,7 @@ final class TranslationSessionStore {
         }
 
         floatingDisplayTranslationText = floatingQueuedTranslationText
+        floatingDisplayTranslationSourceText = floatingQueuedTranslationSourceText
         floatingQueuedTranslationText = ""
         floatingQueuedTranslationSourceText = ""
     }
@@ -2115,6 +2197,7 @@ final class TranslationSessionStore {
 
     private func speakTranslatedDeltaIfNeeded(_ translatedText: String) {
         guard isRunning, isDubbingEnabled else { return }
+        guard !openAITranslationModel.usesRealtimeAudioTranslation else { return }
 
         let currentText = speechReadyText(translatedText)
         guard !currentText.isEmpty else { return }
@@ -2274,6 +2357,7 @@ final class TranslationSessionStore {
 
     private func stopSpeaking() {
         speechOutput.stop()
+        openAIRealtimeAudioOutput.stop()
     }
 }
 
@@ -2339,6 +2423,24 @@ extension TranslationSessionStore: LiveSpeechTranscriberDelegate {
     ) {
         Task { @MainActor in
             appendRealtimeTranslationOnly(text)
+        }
+    }
+
+    nonisolated func liveSpeechTranscriber(
+        _ transcriber: LiveSpeechTranscriber,
+        didOutputAudioPCM16Base64 audio: String,
+        sampleRate: Double
+    ) {
+        Task { @MainActor in
+            guard isRunning,
+                  !isPaused,
+                  isDubbingEnabled,
+                  openAITranslationModel.usesRealtimeAudioTranslation
+            else {
+                return
+            }
+
+            openAIRealtimeAudioOutput.playPCM16Base64(audio, sampleRate: sampleRate)
         }
     }
 

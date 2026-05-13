@@ -15,6 +15,11 @@ protocol LiveSpeechTranscriberDelegate: AnyObject {
         language: LanguageOption,
         confidence: Double
     )
+    func liveSpeechTranscriber(
+        _ transcriber: LiveSpeechTranscriber,
+        didOutputAudioPCM16Base64 audio: String,
+        sampleRate: Double
+    )
     func liveSpeechTranscriber(_ transcriber: LiveSpeechTranscriber, didFail error: Error)
 }
 
@@ -24,6 +29,12 @@ extension LiveSpeechTranscriberDelegate {
         didTranslate text: String,
         language: LanguageOption,
         confidence: Double
+    ) {}
+
+    func liveSpeechTranscriber(
+        _ transcriber: LiveSpeechTranscriber,
+        didOutputAudioPCM16Base64 audio: String,
+        sampleRate: Double
     ) {}
 }
 

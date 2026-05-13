@@ -4,24 +4,46 @@ All notable changes to AirTranslate are documented in this file.
 
 ## Unreleased
 
+No unreleased changes yet.
+
+## 1.2.0 - 2026-05-13 - GPT Realtime and Release Kit
+
 ### Added
 
+- Added optional OpenAI Realtime transcription and translation modes for GPT-powered captions.
+- Added a realtime translation-only model path with optional translated audio playback.
+- Added macOS Keychain storage for user-provided OpenAI API keys.
+- Added English, Korean, Japanese, and Simplified Chinese README files.
+- Added App Store release materials, including sandbox entitlements, packaging script, screenshot assets, App Store Connect draft metadata, privacy notice, and commercial release notices.
+- Added Apache 2.0 license attribution through `LICENSE` and `NOTICE`.
 - Added separate Apple Intelligence Writing Tools buttons for the original and translation panes in the saved transcript editor.
 - Added grouped saved transcript display for original-plus-translation saves.
 
 ### Changed
 
+- Updated the default release metadata to version `1.2.0` build `120`.
+- GPT realtime floating captions now show only the current live caption unit instead of the accumulated transcript, so the overlay behaves more like movie subtitles.
+- GPT realtime delta handling now builds the current utterance before publishing it to the caption flow.
+- GPT modes disable transcript lint cleanup so realtime model output is not rewritten by Apple spell-check cleanup.
+- App Store packaging now ships release notices instead of development-only licensing material.
 - Saved `Original + Translation` transcripts are now stored as separate `*_original.txt` and `*_translation.txt` files that share the same base name.
 - The library presents those paired files as one saved transcript and shows original and translation editors in the same detail section.
 - The saved transcript editor now uses plain `NSTextView` editors for Writing Tools so macOS treats each pane as editable plain text.
 - Live transcript accumulation now trims already-displayed normalized prefixes before appending new partial speech, preventing duplicate source and translation text after paragraph cleanup or settings changes.
 - The library row hit area now spans the full row, making saved transcript selection easier.
 
+### Security
+
+- Confirmed the app does not ship with an OpenAI API key, bearer token, or secret file.
+- User-provided OpenAI API keys remain runtime data stored in macOS Keychain, not in source, release scripts, or release assets.
+- Release build outputs under `Release/product/` stay ignored and are not intended for source commits.
+
 ### Verified
 
 - `swift build` passes.
-- `git diff --check` passes.
-- `swift test` builds the package but reports no test target.
+- `swift test` passes with 6 `TranscriptTextProcessorTests`.
+- `./Release/build_app_store_release.sh local-validate` builds an ad-hoc signed validation app and clean ZIP with version `1.2.0` build `120`.
+- Secret-pattern scan found no committed API key or token values; the only `OPENAI_API_KEY` hit is the Keychain account name constant.
 
 ## 1.1.0 - 2026-05-10 - Live Audio Meter and Header Controls
 

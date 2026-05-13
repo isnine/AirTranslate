@@ -21,4 +21,20 @@ struct LanguageOption: Identifiable, Hashable, Sendable {
         .init(id: "fr-FR", title: "French", locale: Locale(identifier: "fr-FR")),
         .init(id: "de-DE", title: "German", locale: Locale(identifier: "de-DE"))
     ]
+
+    static func preferredSystemLanguage(fallback: LanguageOption) -> LanguageOption {
+        for identifier in Locale.preferredLanguages {
+            let normalizedIdentifier = identifier.lowercased().replacingOccurrences(of: "_", with: "-")
+            if let exactMatch = supported.first(where: { $0.id.lowercased() == normalizedIdentifier }) {
+                return exactMatch
+            }
+
+            let languageCode = normalizedIdentifier.split(separator: "-").first.map(String.init) ?? normalizedIdentifier
+            if let languageMatch = supported.first(where: { $0.id.lowercased().hasPrefix("\(languageCode)-") }) {
+                return languageMatch
+            }
+        }
+
+        return fallback
+    }
 }
