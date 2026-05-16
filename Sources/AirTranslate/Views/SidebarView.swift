@@ -12,8 +12,9 @@ struct SidebarView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                operationalHeader
+                brandHeader
                 sessionCard
+                libraryCard
             }
             .padding(12)
         }
@@ -33,32 +34,31 @@ struct SidebarView: View {
         }
     }
 
-    private var operationalHeader: some View {
-        HStack(spacing: 11) {
+    private var brandHeader: some View {
+        HStack(spacing: 12) {
             AppIconMark()
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(AppText.appName)
-                    .font(.headline.weight(.semibold))
+                    .font(.title3.weight(.semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.86)
 
                 Text(AppText.appTagline)
-                    .font(.caption.weight(.semibold))
+                    .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
 
             Spacer(minLength: 0)
 
-            StatusPill(
-                color: statusColor,
-                title: statusTitle,
-                statusMessage: session.statusMessage
-            )
+            HStack(spacing: 8) {
+                CaptureStatusIndicator(
+                    symbolName: statusSymbolName,
+                    color: statusColor,
+                    statusMessage: session.statusMessage
+                )
 
-            if needsPermissionAction {
                 Button {
                     session.openPrivacySettings()
                 } label: {
@@ -73,46 +73,29 @@ struct SidebarView: View {
                 .accessibilityHidden(!needsPermissionAction)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 14)
-        .frame(minHeight: 76)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08))
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.06))
         }
     }
 
     private var sessionCard: some View {
-        SidebarCard {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 8) {
-                    Label(AppText.translationSettings, systemImage: "slider.horizontal.3")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .labelStyle(.titleAndIcon)
-
-                    Spacer(minLength: 0)
-
-                    openConfigurationButton
-                }
-                .padding(.bottom, 12)
-
+        SidebarCard(
+            title: AppText.translationSettings,
+            headerAccessory: {
+                openConfigurationButton
+            }
+        ) {
+            VStack(spacing: 10) {
                 languageControls
-
-                SidebarDeckDivider()
-
-                autoDetectionControl
-
-                SidebarDeckDivider()
 
                 ProcessingEnginePicker(
                     selection: processingEngineBinding,
                     isDisabled: session.isRunning
                 )
-
-                SidebarDeckDivider()
 
                 AudioInputSourcePicker(
                     selection: $session.audioInputSource,
@@ -125,18 +108,12 @@ struct SidebarView: View {
                         devices: session.microphoneInputDevices,
                         isDisabled: session.isRunning
                     )
-                    .padding(.top, 8)
                 }
-
-                SidebarDeckDivider()
 
                 SessionDurationRadioGroup(
                     selection: $session.sessionDurationMode,
                     isDisabled: session.isRunning
                 )
-
-                libraryButton
-                    .padding(.top, 14)
             }
         }
         .onAppear {
@@ -167,12 +144,12 @@ struct SidebarView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         } else {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .bottom, spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
                     if session.isAppleSourceAutoDetectionEnabled {
-                        OperationalAutoLanguagePicker(title: AppText.from)
+                        CompactAutoLanguagePicker(title: AppText.from)
                     } else {
-                        OperationalLanguagePicker(title: AppText.from, selection: $session.sourceLanguage)
+                        CompactLanguagePicker(title: AppText.from, selection: $session.sourceLanguage)
                     }
 
                     Button {
@@ -181,34 +158,32 @@ struct SidebarView: View {
                         Image(systemName: "arrow.left.arrow.right")
                             .font(.caption.weight(.bold))
                             .foregroundStyle(Color.accentColor)
-                            .frame(width: 32, height: 32)
-                            .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                            .frame(width: 24, height: 24)
+                            .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                     }
                     .buttonStyle(.plain)
                     .disabled(session.isRunning || session.isAppleSourceAutoDetectionEnabled)
                     .help(AppText.swapLanguages)
                     .accessibilityLabel(AppText.swapLanguages)
 
-                    OperationalLanguagePicker(title: AppText.to, selection: $session.targetLanguage)
+                    CompactLanguagePicker(title: AppText.to, selection: $session.targetLanguage)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+
+                CompactToggleRow(
+                    title: AppText.autoDetectInput,
+                    systemImage: "sparkles",
+                    isOn: appleSourceAutoDetectionBinding
+                )
+                .disabled(session.isRunning)
+                .help(
+                    session.isAppleSourceAutoDetectionAvailable
+                        ? AppText.appleAutoLanguageModeDescription
+                        : AppText.appleAutoLanguageModeUnavailableDescription
+                )
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-    }
-
-    private var autoDetectionControl: some View {
-        SidebarToggleControlRow(
-            title: AppText.autoDetectInput,
-            systemImage: "sparkles",
-            isOn: appleSourceAutoDetectionBinding
-        )
-        .disabled(session.isRunning)
-        .help(
-            session.isAppleSourceAutoDetectionAvailable
-                ? AppText.appleAutoLanguageModeDescription
-                : AppText.appleAutoLanguageModeUnavailableDescription
-        )
     }
 
     private var appleSourceAutoDetectionBinding: Binding<Bool> {
@@ -282,44 +257,37 @@ struct SidebarView: View {
         ProcessingEngine.current(for: session) == .gpt && session.isUsingOpenAIRealtimeTranslation
     }
 
-    private var libraryButton: some View {
-        Button {
-            isLibraryPresented = true
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "folder")
-                    .font(.callout.weight(.semibold))
+    private var libraryCard: some View {
+        SidebarCard(title: AppText.library) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(AppText.librarySummary)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
-                    .frame(width: 22, height: 22)
 
-                Text(AppText.savedTranscripts)
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-
-                Spacer(minLength: 8)
-
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 12)
-            .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
-            .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+                Button {
+                    isLibraryPresented = true
+                } label: {
+                    Label(AppText.manageSavedTranscripts, systemImage: "tray.full")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .controlSize(.small)
             }
         }
-        .buttonStyle(.plain)
-        .help(AppText.manageSavedTranscripts)
-        .accessibilityLabel(AppText.manageSavedTranscripts)
     }
 
     private var needsPermissionAction: Bool {
         session.statusMessage.localizedCaseInsensitiveContains("permission")
             || session.statusMessage.localizedCaseInsensitiveContains("권한")
+    }
+
+    private var statusSymbolName: String {
+        if session.isPaused {
+            return "pause.circle.fill"
+        }
+        if session.isRunning {
+            return "waveform.circle.fill"
+        }
+        return "circle.dotted"
     }
 
     private var statusColor: Color {
@@ -329,23 +297,7 @@ struct SidebarView: View {
         if session.isRunning {
             return .green
         }
-        if needsPermissionAction {
-            return .orange
-        }
-        return .green
-    }
-
-    private var statusTitle: String {
-        if session.isPaused {
-            return AppText.paused
-        }
-        if session.isRunning {
-            return AppText.menuBarRunningTitle
-        }
-        if needsPermissionAction {
-            return AppText.localized(english: "Permission", korean: "권한 필요")
-        }
-        return AppText.ready
+        return .secondary
     }
 }
 
@@ -377,42 +329,6 @@ private enum ProcessingEngine: String, CaseIterable, Identifiable {
     @MainActor
     static func current(for session: TranslationSessionStore) -> ProcessingEngine {
         session.openAITranscriptionModel.isEnabled || session.openAITranslationModel.isEnabled ? .gpt : .apple
-    }
-}
-
-private struct StatusPill: View {
-    let color: Color
-    let title: String
-    let statusMessage: String
-
-    var body: some View {
-        HStack(spacing: 7) {
-            ZStack {
-                Circle()
-                    .strokeBorder(color.opacity(0.45), lineWidth: 1.2)
-
-                Circle()
-                    .fill(color)
-                    .frame(width: 10, height: 10)
-            }
-            .frame(width: 24, height: 24)
-
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(color)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(color.opacity(0.08), in: Capsule())
-        .overlay {
-            Capsule()
-                .strokeBorder(color.opacity(0.18), lineWidth: 1)
-        }
-        .help(statusMessage)
-        .accessibilityLabel(AppText.capture)
-        .accessibilityValue(statusMessage)
     }
 }
 
@@ -629,131 +545,6 @@ private struct ConfigurationSheetView: View {
     }
 }
 
-private struct SidebarDeckDivider: View {
-    var body: some View {
-        Rectangle()
-            .fill(Color.primary.opacity(0.065))
-            .frame(height: 1)
-            .padding(.vertical, 12)
-            .accessibilityHidden(true)
-    }
-}
-
-private struct OperationalLanguagePicker: View {
-    let title: String
-    @Binding var selection: LanguageOption
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-
-            Menu {
-                ForEach(LanguageOption.supported) { language in
-                    Button(language.localizedTitle) {
-                        selection = language
-                    }
-                }
-            } label: {
-                HStack(spacing: 6) {
-                    Text(selection.localizedTitle)
-                        .font(.callout.weight(.semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.78)
-
-                    Spacer(minLength: 4)
-
-                    Image(systemName: "chevron.down")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 9)
-                .padding(.vertical, 9)
-                .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
-                .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1)
-                }
-            }
-            .buttonStyle(.plain)
-            .help(title)
-            .accessibilityLabel(title)
-            .accessibilityValue(selection.localizedTitle)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-private struct OperationalAutoLanguagePicker: View {
-    let title: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-
-            HStack(spacing: 6) {
-                Text(AppText.autoDetectShort)
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-
-                Spacer(minLength: 4)
-            }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 9)
-            .frame(maxWidth: .infinity, minHeight: 42, alignment: .leading)
-            .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .strokeBorder(Color.accentColor.opacity(0.18), lineWidth: 1)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .help(AppText.appleAutoLanguageModeUnavailableDescription)
-        .accessibilityLabel(AppText.autoDetectInput)
-    }
-}
-
-private struct SidebarToggleControlRow: View {
-    let title: String
-    let systemImage: String
-    @Binding var isOn: Bool
-
-    var body: some View {
-        HStack(spacing: 11) {
-            Image(systemName: systemImage)
-                .font(.callout.weight(.semibold))
-                .foregroundStyle(isOn ? Color.accentColor : Color.secondary)
-                .frame(width: 22, height: 22)
-
-            Text(title)
-                .font(.callout.weight(.semibold))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
-
-            Spacer(minLength: 10)
-
-            Toggle(title, isOn: $isOn)
-                .labelsHidden()
-                .toggleStyle(.switch)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .accessibilityLabel(title)
-        .accessibilityValue(isOn ? AppText.floatingCaptionPowerOn : AppText.floatingCaptionPowerOff)
-    }
-}
-
 private struct AutoLanguageRow: View {
     let helpText: String
 
@@ -881,15 +672,15 @@ private struct ProcessingEnginePicker: View {
     let isDisabled: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 9) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 7) {
                 Image(systemName: "switch.2")
-                    .font(.callout.weight(.semibold))
+                    .font(.caption.weight(.bold))
                     .foregroundStyle(.secondary)
-                    .frame(width: 22, height: 22)
+                    .frame(width: 14)
 
                 Text(AppText.model)
-                    .font(.callout.weight(.semibold))
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
 
                 Spacer(minLength: 0)
@@ -906,6 +697,8 @@ private struct ProcessingEnginePicker: View {
             .disabled(isDisabled)
             .accessibilityLabel(AppText.model)
         }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
     }
 }
 
@@ -914,15 +707,15 @@ private struct AudioInputSourcePicker: View {
     let isDisabled: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 9) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 7) {
                 Image(systemName: "waveform.badge.magnifyingglass")
-                    .font(.callout.weight(.semibold))
+                    .font(.caption.weight(.bold))
                     .foregroundStyle(.secondary)
-                    .frame(width: 22, height: 22)
+                    .frame(width: 14)
 
                 Text(AppText.audioInputSource)
-                    .font(.callout.weight(.semibold))
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
 
                 Spacer(minLength: 0)
@@ -939,6 +732,8 @@ private struct AudioInputSourcePicker: View {
             .disabled(isDisabled)
             .accessibilityLabel(AppText.audioInputSource)
         }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
     }
 }
 
@@ -1223,15 +1018,15 @@ private struct SessionDurationRadioGroup: View {
     let isDisabled: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 9) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 7) {
                 Image(systemName: "timer")
-                    .font(.callout.weight(.semibold))
+                    .font(.caption.weight(.bold))
                     .foregroundStyle(.secondary)
-                    .frame(width: 22, height: 22)
+                    .frame(width: 14)
 
                 Text(AppText.sessionLength)
-                    .font(.callout.weight(.semibold))
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
 
                 Spacer(minLength: 0)
@@ -1242,9 +1037,8 @@ private struct SessionDurationRadioGroup: View {
                     Text(mode.title).tag(mode)
                 }
             }
-            .pickerStyle(.segmented)
+            .pickerStyle(.radioGroup)
             .labelsHidden()
-            .frame(maxWidth: .infinity)
             .disabled(isDisabled)
             .accessibilityLabel(AppText.sessionLength)
 
@@ -1253,6 +1047,82 @@ private struct SessionDurationRadioGroup: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+    }
+}
+
+private struct CompactLanguagePicker: View {
+    let title: String
+    @Binding var selection: LanguageOption
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, alignment: .trailing)
+                .lineLimit(1)
+
+            Menu {
+                ForEach(LanguageOption.supported) { language in
+                    Button(language.localizedTitle) {
+                        selection = language
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Text(selection.localizedTitle)
+                        .font(.callout.weight(.semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
+
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 9)
+                .padding(.vertical, 7)
+                .frame(width: 72)
+                .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .help(title)
+            .accessibilityLabel(title)
+            .accessibilityValue(selection.localizedTitle)
+        }
+        .frame(width: 100)
+    }
+}
+
+private struct CompactAutoLanguagePicker: View {
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, alignment: .trailing)
+                .lineLimit(1)
+
+            HStack(spacing: 4) {
+                Text(AppText.autoDetectShort)
+                    .font(.callout.weight(.semibold))
+                    .lineLimit(1)
+
+                Image(systemName: "sparkles")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Color.accentColor)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 7)
+            .frame(width: 72)
+            .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .frame(width: 100)
+        .help(AppText.appleAutoLanguageModeUnavailableDescription)
+        .accessibilityLabel(AppText.autoDetectInput)
     }
 }
 
@@ -1266,9 +1136,33 @@ private struct AppIconMark: View {
             .resizable()
             .aspectRatio(contentMode: .fit)
             .frame(width: 46, height: 46)
-            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .shadow(color: Color.black.opacity(0.16), radius: 5, x: 0, y: 2)
             .accessibilityHidden(true)
+    }
+}
+
+private struct CaptureStatusIndicator: View {
+    let symbolName: String
+    let color: Color
+    let statusMessage: String
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(color.opacity(0.14))
+
+            Circle()
+                .strokeBorder(color.opacity(0.36), lineWidth: 1)
+
+            Image(systemName: symbolName)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(color)
+        }
+        .frame(width: 30, height: 30)
+        .help(statusMessage)
+        .accessibilityLabel(AppText.capture)
+        .accessibilityValue(statusMessage)
     }
 }
 
@@ -1451,12 +1345,12 @@ private struct SidebarCard<Content: View, HeaderAccessory: View>: View {
 
             content
         }
-        .padding(14)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08))
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.06))
         }
     }
 }
