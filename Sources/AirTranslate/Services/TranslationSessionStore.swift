@@ -473,6 +473,11 @@ final class TranslationSessionStore {
         statusMessage = AppText.listeningForSpeech(from: audioInputSource)
     }
 
+    func showAppleSourceAutoDetectionUnavailableNotice() {
+        isAppleSourceAutoDetectionEnabled = false
+        showToast(AppText.appleAutoLanguageModeUnavailableToast)
+    }
+
     func prepareForTermination() {
         flushPendingCaptionPresentation()
         _ = flushPendingTranscriptSave()

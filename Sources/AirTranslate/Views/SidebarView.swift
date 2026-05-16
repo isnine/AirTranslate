@@ -173,9 +173,9 @@ struct SidebarView: View {
                 CompactToggleRow(
                     title: AppText.autoDetectInput,
                     systemImage: "sparkles",
-                    isOn: $session.isAppleSourceAutoDetectionEnabled
+                    isOn: appleSourceAutoDetectionBinding
                 )
-                .disabled(session.isRunning || !session.isAppleSourceAutoDetectionAvailable)
+                .disabled(session.isRunning)
                 .help(
                     session.isAppleSourceAutoDetectionAvailable
                         ? AppText.appleAutoLanguageModeDescription
@@ -184,6 +184,23 @@ struct SidebarView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private var appleSourceAutoDetectionBinding: Binding<Bool> {
+        Binding(
+            get: {
+                session.isAppleSourceAutoDetectionAvailable
+                    && session.isAppleSourceAutoDetectionEnabled
+            },
+            set: { isEnabled in
+                guard session.isAppleSourceAutoDetectionAvailable else {
+                    session.showAppleSourceAutoDetectionUnavailableNotice()
+                    return
+                }
+
+                session.isAppleSourceAutoDetectionEnabled = isEnabled
+            }
+        )
     }
 
     private var openConfigurationButton: some View {
