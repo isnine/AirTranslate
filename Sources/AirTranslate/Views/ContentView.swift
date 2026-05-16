@@ -20,6 +20,42 @@ struct ContentView: View {
         }
         .animation(.spring(response: 0.26, dampingFraction: 0.84), value: session.toastSequence)
         .animation(.easeOut(duration: 0.18), value: session.toastMessage)
+        .confirmationDialog(
+            AppText.autoDetectionLanguageChangeTitle,
+            isPresented: autoDetectionLanguageChangeBinding,
+            titleVisibility: .visible
+        ) {
+            Button(AppText.startNewAutoDetectionSession) {
+                session.confirmAutoDetectionLanguageChange()
+            }
+
+            Button(AppText.keepCurrentAutoDetectionLanguage, role: .cancel) {
+                session.keepCurrentAutoDetectionLanguage()
+            }
+        } message: {
+            if let languageChange = session.pendingAutoDetectionLanguageChange {
+                Text(
+                    AppText.autoDetectionLanguageChangeMessage(
+                        current: languageChange.currentLanguage.localizedTitle,
+                        detected: languageChange.detectedLanguage.localizedTitle,
+                        target: languageChange.targetLanguage.localizedTitle
+                    )
+                )
+            }
+        }
+    }
+
+    private var autoDetectionLanguageChangeBinding: Binding<Bool> {
+        Binding(
+            get: {
+                session.pendingAutoDetectionLanguageChange != nil
+            },
+            set: { isPresented in
+                if !isPresented {
+                    session.keepCurrentAutoDetectionLanguage()
+                }
+            }
+        )
     }
 }
 

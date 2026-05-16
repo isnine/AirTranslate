@@ -58,4 +58,64 @@ struct TranslationSessionStoreLanguageCandidateTests {
             #expect(candidates.count == LanguageOption.supported.count - 1)
         }
     }
+
+    @Test
+    func autoDetectionRequestsConfirmationForLanguageChangeAfterSilence() {
+        let shouldConfirm = AutoDetectionLanguageChangePolicy.shouldRequestConfirmation(
+            isAutoDetectionEnabled: true,
+            activeLanguage: LanguageOption.english,
+            detectedLanguage: LanguageOption.supported[2],
+            confidence: 0.9,
+            hadLongSilence: true,
+            hasVisibleTranscript: true,
+            minimumSwitchConfidence: 0.72
+        )
+
+        #expect(shouldConfirm)
+    }
+
+    @Test
+    func autoDetectionDoesNotRequestConfirmationWithoutSilence() {
+        let shouldConfirm = AutoDetectionLanguageChangePolicy.shouldRequestConfirmation(
+            isAutoDetectionEnabled: true,
+            activeLanguage: LanguageOption.english,
+            detectedLanguage: LanguageOption.supported[2],
+            confidence: 0.9,
+            hadLongSilence: false,
+            hasVisibleTranscript: true,
+            minimumSwitchConfidence: 0.72
+        )
+
+        #expect(!shouldConfirm)
+    }
+
+    @Test
+    func autoDetectionDoesNotRequestConfirmationForLowConfidenceSwitch() {
+        let shouldConfirm = AutoDetectionLanguageChangePolicy.shouldRequestConfirmation(
+            isAutoDetectionEnabled: true,
+            activeLanguage: LanguageOption.english,
+            detectedLanguage: LanguageOption.supported[2],
+            confidence: 0.5,
+            hadLongSilence: true,
+            hasVisibleTranscript: true,
+            minimumSwitchConfidence: 0.72
+        )
+
+        #expect(!shouldConfirm)
+    }
+
+    @Test
+    func autoDetectionDoesNotRequestConfirmationForInitialLanguageDetection() {
+        let shouldConfirm = AutoDetectionLanguageChangePolicy.shouldRequestConfirmation(
+            isAutoDetectionEnabled: true,
+            activeLanguage: nil,
+            detectedLanguage: LanguageOption.supported[2],
+            confidence: 0.9,
+            hadLongSilence: true,
+            hasVisibleTranscript: false,
+            minimumSwitchConfidence: 0.72
+        )
+
+        #expect(!shouldConfirm)
+    }
 }

@@ -81,6 +81,24 @@ enum AppText {
         japanese: "入力言語を自動検出",
         chineseSimplified: "自动检测输入语言"
     )
+    static let autoDetectionLanguageChangeTitle = localized(
+        english: "New input language detected",
+        korean: "새 입력 언어가 감지되었습니다",
+        japanese: "新しい入力言語を検出しました",
+        chineseSimplified: "检测到新的输入语言"
+    )
+    static let startNewAutoDetectionSession = localized(
+        english: "Start New Session",
+        korean: "새 세션 시작",
+        japanese: "新しいセッションを開始",
+        chineseSimplified: "开始新会话"
+    )
+    static let keepCurrentAutoDetectionLanguage = localized(
+        english: "Keep Current Session",
+        korean: "현재 세션 유지",
+        japanese: "現在のセッションを維持",
+        chineseSimplified: "保留当前会话"
+    )
     static let preferredLanguageShort = localized(english: "Pref.", korean: "선호", japanese: "優先", chineseSimplified: "首选")
     static let preferredLanguage = localized(
         english: "Preferred language",
@@ -514,6 +532,24 @@ enum AppText {
             korean: "자동 감지 → \(target)",
             japanese: "自動検出 → \(target)",
             chineseSimplified: "自动检测 → \(target)"
+        )
+    }
+
+    static func autoDetectionLanguageChangePaused(current: String, detected: String) -> String {
+        localized(
+            english: "\(detected) detected after \(current). Waiting for confirmation.",
+            korean: "\(current) 다음에 \(detected)이 감지되었습니다. 확인을 기다리는 중입니다.",
+            japanese: "\(current)の後に\(detected)を検出しました。確認待ちです。",
+            chineseSimplified: "在\(current)之后检测到\(detected)。正在等待确认。"
+        )
+    }
+
+    static func autoDetectionLanguageChangeMessage(current: String, detected: String, target: String) -> String {
+        localized(
+            english: "AirTranslate was translating \(current) to \(target), then detected \(detected) after a pause. Start a new session to avoid mixing languages in the same transcript.",
+            korean: "AirTranslate가 \(current)에서 \(target)으로 번역하던 중, 잠시 멈춘 뒤 \(detected)이 감지되었습니다. 같은 기록에 언어가 섞이지 않도록 새 세션으로 시작하세요.",
+            japanese: "AirTranslateは\(current)から\(target)へ翻訳中でしたが、一時停止後に\(detected)を検出しました。同じ記録で言語が混ざらないよう、新しいセッションを開始してください。",
+            chineseSimplified: "AirTranslate 原本正在将\(current)翻译为\(target)，暂停后检测到\(detected)。请开始新会话，避免同一记录中混合语言。"
         )
     }
 

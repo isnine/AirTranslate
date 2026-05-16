@@ -38,6 +38,38 @@ private struct PendingCaptionPresentation {
     let target: LanguageOption
 }
 
+struct AutoDetectionLanguageChangeConfirmation: Equatable {
+    let currentLanguage: LanguageOption
+    let detectedLanguage: LanguageOption
+    let targetLanguage: LanguageOption
+    let sourceText: String
+    let confidence: Double
+}
+
+enum AutoDetectionLanguageChangePolicy {
+    static func shouldRequestConfirmation(
+        isAutoDetectionEnabled: Bool,
+        activeLanguage: LanguageOption?,
+        detectedLanguage: LanguageOption,
+        confidence: Double,
+        hadLongSilence: Bool,
+        hasVisibleTranscript: Bool,
+        minimumSwitchConfidence: Double
+    ) -> Bool {
+        guard isAutoDetectionEnabled,
+              hasVisibleTranscript,
+              hadLongSilence,
+              confidence >= minimumSwitchConfidence,
+              let activeLanguage,
+              activeLanguage != detectedLanguage
+        else {
+            return false
+        }
+
+        return true
+    }
+}
+
 @Observable
 @MainActor
 final class TranslationSessionStore {
@@ -161,6 +193,7 @@ final class TranslationSessionStore {
     var selectedSavedTranscriptID: String?
     var savedDraftSourceText = ""
     var savedDraftTranslationText = ""
+    var pendingAutoDetectionLanguageChange: AutoDetectionLanguageChangeConfirmation?
     var isFoundationTranscriptCleanupRunning = false
     private(set) var latestAudioLevel: Float?
     var modelAvailabilityByModelID = Dictionary(
@@ -391,7 +424,48 @@ final class TranslationSessionStore {
 
     func resume() {
         guard isRunning, isPaused else { return }
+        pendingAutoDetectionLanguageChange = nil
 
+        setCaptionersPaused(false)
+        isPaused = false
+        lastRecognitionAt = Date()
+        statusMessage = AppText.listeningForSpeech(from: audioInputSource)
+    }
+
+    func confirmAutoDetectionLanguageChange() {
+        guard let pendingAutoDetectionLanguageChange else { return }
+
+        self.pendingAutoDetectionLanguageChange = nil
+        let detectedLanguage = pendingAutoDetectionLanguageChange.detectedLanguage
+        let bufferedSourceText = pendingAutoDetectionLanguageChange.sourceText
+        let bufferedConfidence = pendingAutoDetectionLanguageChange.confidence
+        let didSaveTranscript = flushPendingTranscriptSave()
+
+        resetLiveSessionState(clearsVisibleLines: true)
+        appleAutoDetectionPreferredLanguage = detectedLanguage
+        setCaptionersPaused(false)
+        isPaused = false
+        lastRecognitionAt = Date()
+        statusMessage = AppText.listeningForSpeech(from: audioInputSource)
+
+        if didSaveTranscript {
+            showToast(AppText.transcriptSavedToast)
+        }
+
+        Task { @MainActor in
+            await appendCaption(
+                sourceText: bufferedSourceText,
+                recognizedLanguage: detectedLanguage,
+                confidence: bufferedConfidence,
+                isFinal: false
+            )
+        }
+    }
+
+    func keepCurrentAutoDetectionLanguage() {
+        guard pendingAutoDetectionLanguageChange != nil else { return }
+
+        pendingAutoDetectionLanguageChange = nil
         setCaptionersPaused(false)
         isPaused = false
         lastRecognitionAt = Date()
@@ -764,6 +838,7 @@ final class TranslationSessionStore {
         currentPartialText = ""
         currentPartialLanguage = nil
         appleAutoDetectionPreferredLanguage = nil
+        pendingAutoDetectionLanguageChange = nil
         pendingParagraphBreakBeforePartial = false
         floatingPresentationTask?.cancel()
         floatingPresentationTask = nil
@@ -1247,6 +1322,18 @@ final class TranslationSessionStore {
 
         let now = Date()
         let hadLongSilence = now.timeIntervalSince(lastRecognitionAt) > paragraphBreakSilenceInterval
+        if shouldRequestAutoDetectionLanguageChange(
+            recognizedLanguage: recognizedLanguage,
+            confidence: confidence,
+            hadLongSilence: hadLongSilence
+        ) {
+            pauseForAutoDetectionLanguageChange(
+                detectedLanguage: recognizedLanguage,
+                sourceText: sourceText,
+                confidence: confidence
+            )
+            return
+        }
         guard shouldAcceptRecognizedLanguage(
             recognizedLanguage: recognizedLanguage,
             confidence: confidence,
@@ -1317,6 +1404,66 @@ final class TranslationSessionStore {
         }
     }
 
+    private var currentAutoDetectedSourceLanguage: LanguageOption? {
+        if let currentPartialLanguage {
+            return currentPartialLanguage
+        }
+
+        if let currentLineID,
+           let lineLanguage = sourceLanguageByLineID[currentLineID] {
+            return lineLanguage
+        }
+
+        return nil
+    }
+
+    private func shouldRequestAutoDetectionLanguageChange(
+        recognizedLanguage: LanguageOption,
+        confidence: Double,
+        hadLongSilence: Bool
+    ) -> Bool {
+        AutoDetectionLanguageChangePolicy.shouldRequestConfirmation(
+            isAutoDetectionEnabled: isUsingAppleSourceAutoDetection,
+            activeLanguage: currentAutoDetectedSourceLanguage,
+            detectedLanguage: recognizedLanguage,
+            confidence: confidence,
+            hadLongSilence: hadLongSilence,
+            hasVisibleTranscript: !visibleTranscript().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            minimumSwitchConfidence: Self.appleAutoDetectionLanguageSwitchMinimumConfidence
+        )
+    }
+
+    private func pauseForAutoDetectionLanguageChange(
+        detectedLanguage: LanguageOption,
+        sourceText: String,
+        confidence: Double
+    ) {
+        guard pendingAutoDetectionLanguageChange == nil,
+              let currentLanguage = currentAutoDetectedSourceLanguage
+        else {
+            return
+        }
+
+        flushPendingCaptionPresentation()
+        transcriptCleanupTask?.cancel()
+        transcriptCleanupTask = nil
+        commitCurrentPartial()
+        organizeCurrentTranscript(sourceTextOverride: visibleTranscript())
+        pendingAutoDetectionLanguageChange = AutoDetectionLanguageChangeConfirmation(
+            currentLanguage: currentLanguage,
+            detectedLanguage: detectedLanguage,
+            targetLanguage: targetLanguage,
+            sourceText: sourceText,
+            confidence: confidence
+        )
+        setCaptionersPaused(true)
+        isPaused = true
+        statusMessage = AppText.autoDetectionLanguageChangePaused(
+            current: currentLanguage.localizedTitle,
+            detected: detectedLanguage.localizedTitle
+        )
+    }
+
     private func shouldPresentCaptionUpdate(sourceText: String, isFinal: Bool) -> Bool {
         guard usesLongSessionMode else { return true }
 
@@ -1345,8 +1492,7 @@ final class TranslationSessionStore {
         guard let currentPartialLanguage else { return true }
         guard currentPartialLanguage != recognizedLanguage else { return true }
 
-        return hadLongSilence
-            || confidence >= Self.appleAutoDetectionLanguageSwitchMinimumConfidence
+        return false
     }
 
     private func scheduleCaptionPresentation(
