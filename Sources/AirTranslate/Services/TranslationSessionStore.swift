@@ -537,14 +537,17 @@ final class TranslationSessionStore {
         }
     }
 
-    func saveOpenAIAPIKey(_ key: String) {
+    @discardableResult
+    func saveOpenAIAPIKey(_ key: String) -> Bool {
         do {
             try OpenAIAPIKeyStore.saveAPIKey(key)
             hasOpenAIAPIKey = true
             statusMessage = AppText.openAIAPIKeySaved
             refreshModelAvailability()
+            return true
         } catch {
             statusMessage = error.localizedDescription
+            return false
         }
     }
 
@@ -559,15 +562,18 @@ final class TranslationSessionStore {
         }
     }
 
-    func saveAzureOpenAIConfig(endpoint: String, apiKey: String) {
+    @discardableResult
+    func saveAzureOpenAIConfig(endpoint: String, apiKey: String) -> Bool {
         do {
             try AzureOpenAIConfigStore.saveConfig(endpoint: endpoint, apiKey: apiKey)
-            hasAzureOpenAIConfig = true
+            hasAzureOpenAIConfig = AzureOpenAIConfigStore.hasConfig()
             azureOpenAIEndpoint = AzureOpenAIConfigStore.readEndpoint() ?? ""
             statusMessage = AppText.azureOpenAIConfigSaved
             refreshModelAvailability()
+            return true
         } catch {
             statusMessage = error.localizedDescription
+            return false
         }
     }
 
