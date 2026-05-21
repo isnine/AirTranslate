@@ -11,32 +11,25 @@ struct OpenAIRealtimeProviderConfig: Sendable {
     let kind: Kind
     let host: String
     let apiKey: String
-    /// Azure-only override for the transcription deployment name.
-    /// `nil` falls back to `azureRealtimeTranscriptionSessionDeployment`.
-    let azureTranscriptionDeployment: String?
 
     static let openAIHost = "api.openai.com"
-    static let azureRealtimeTranscriptionSessionDeployment = "gpt-realtime-1.5"
 
     static func openAI(apiKey: String) -> OpenAIRealtimeProviderConfig {
         OpenAIRealtimeProviderConfig(
             kind: .openAI,
             host: openAIHost,
-            apiKey: apiKey,
-            azureTranscriptionDeployment: nil
+            apiKey: apiKey
         )
     }
 
     static func azure(
         host: String,
-        apiKey: String,
-        transcriptionDeployment: String? = nil
+        apiKey: String
     ) -> OpenAIRealtimeProviderConfig {
         OpenAIRealtimeProviderConfig(
             kind: .azure,
             host: host,
-            apiKey: apiKey,
-            azureTranscriptionDeployment: transcriptionDeployment
+            apiKey: apiKey
         )
     }
 
@@ -45,14 +38,7 @@ struct OpenAIRealtimeProviderConfig: Sendable {
         case .openAI:
             return URL(string: "wss://\(host)/v1/realtime?intent=transcription")
         case .azure:
-            let trimmed = azureTranscriptionDeployment?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let deployment = trimmed.isEmpty
-                ? Self.azureRealtimeTranscriptionSessionDeployment
-                : trimmed
-            let encoded = deployment
-                .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? deployment
-            return URL(string: "wss://\(host)/openai/v1/realtime?model=\(encoded)")
+            return URL(string: "wss://\(host)/openai/v1/realtime?intent=transcription")
         }
     }
 
@@ -260,17 +246,9 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
         let data: Data
         switch outputMode {
         case .transcription:
-            let sessionType: String
-            switch providerKind {
-            case .openAI:
-                sessionType = "transcription"
-            case .azure:
-                sessionType = "realtime"
-            }
-
             let event = OpenAIRealtimeTranscriptionSessionUpdateEvent(
                 session: OpenAIRealtimeTranscriptionSession(
-                    type: sessionType,
+                    type: "transcription",
                     audio: OpenAIRealtimeTranscriptionAudio(
                         input: OpenAIRealtimeTranscriptionAudioInput(
                             format: OpenAIRealtimeAudioFormat(type: "audio/pcm", rate: Self.realtimeAudioSampleRate),

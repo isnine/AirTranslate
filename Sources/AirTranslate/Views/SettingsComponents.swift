@@ -559,13 +559,6 @@ struct OpenAIAdvancedOverridesView: View {
                         placeholder: translationPlaceholder,
                         text: $session.customAzureTranslationModelName
                     )
-                    ModelNameOverrideField(
-                        title: AppText.customAzureDeploymentName,
-                        systemImage: "server.rack",
-                        placeholder: OpenAIRealtimeProviderConfig
-                            .azureRealtimeTranscriptionSessionDeployment,
-                        text: $session.customAzureTranscriptionDeployment
-                    )
 
                     Text(AppText.customModelNameFootnote)
                         .font(.caption2)

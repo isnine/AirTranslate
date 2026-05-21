@@ -366,12 +366,6 @@ enum AppText {
         japanese: "翻訳モデル名",
         chineseSimplified: "翻译模型名称"
     )
-    static let customAzureDeploymentName = localized(
-        english: "Azure transcription deployment",
-        korean: "Azure 전사 배포 이름",
-        japanese: "Azure 文字起こしデプロイ名",
-        chineseSimplified: "Azure 转写部署名称"
-    )
     static let customModelNameFootnote = localized(
         english: "Leave empty to use the default.",
         korean: "기본값을 사용하려면 비워두세요.",

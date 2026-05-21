@@ -26,7 +26,6 @@ private enum SettingsKey {
     static let openAIProvider = "openAIProvider"
     static let customAzureTranscriptionModelName = "customAzureTranscriptionModelName"
     static let customAzureTranslationModelName = "customAzureTranslationModelName"
-    static let customAzureTranscriptionDeployment = "customAzureTranscriptionDeployment"
 }
 
 private struct TranslationRequest {
@@ -144,9 +143,6 @@ final class TranslationSessionStore {
         didSet { persistSelectedSettings() }
     }
     var customAzureTranslationModelName: String = "" {
-        didSet { persistSelectedSettings() }
-    }
-    var customAzureTranscriptionDeployment: String = "" {
         didSet { persistSelectedSettings() }
     }
     var openAITranscriptionModel = OpenAIRealtimeTranscriptionModel.off {
@@ -614,13 +610,7 @@ final class TranslationSessionStore {
             guard let key = try AzureOpenAIConfigStore.readAPIKey(), !key.isEmpty else {
                 throw OpenAITranslationError.missingAzureAPIKey
             }
-            let deployment = customAzureTranscriptionDeployment
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            return .azure(
-                host: host,
-                apiKey: key,
-                transcriptionDeployment: deployment.isEmpty ? nil : deployment
-            )
+            return .azure(host: host, apiKey: key)
         }
     }
 
@@ -1142,9 +1132,6 @@ final class TranslationSessionStore {
         if let value = defaults.string(forKey: SettingsKey.customAzureTranslationModelName) {
             customAzureTranslationModelName = value
         }
-        if let value = defaults.string(forKey: SettingsKey.customAzureTranscriptionDeployment) {
-            customAzureTranscriptionDeployment = value
-        }
         refreshMicrophoneInputDevices()
     }
 
@@ -1176,7 +1163,6 @@ final class TranslationSessionStore {
         defaults.set(openAIProvider.rawValue, forKey: SettingsKey.openAIProvider)
         defaults.set(customAzureTranscriptionModelName, forKey: SettingsKey.customAzureTranscriptionModelName)
         defaults.set(customAzureTranslationModelName, forKey: SettingsKey.customAzureTranslationModelName)
-        defaults.set(customAzureTranscriptionDeployment, forKey: SettingsKey.customAzureTranscriptionDeployment)
     }
 
     private func stopCapture() async {
