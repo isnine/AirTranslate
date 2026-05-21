@@ -1,8 +1,35 @@
 import Foundation
 
+protocol OpenAITranslationAPIKeyProviding: Sendable {
+    func readAPIKey() throws -> String?
+}
+
+struct KeychainOpenAITranslationAPIKeyProvider: OpenAITranslationAPIKeyProviding {
+    func readAPIKey() throws -> String? {
+        try OpenAIAPIKeyStore.readAPIKey()
+    }
+}
+
+protocol OpenAITranslationHTTPClient: Sendable {
+    func data(for request: URLRequest) async throws -> (Data, URLResponse)
+}
+
+extension URLSession: OpenAITranslationHTTPClient {}
+
 actor OpenAITranslationService {
-    private let endpoint = URL(string: "https://api.openai.com/v1/responses")!
-    private let model = "gpt-realtime-translate"
+    private let endpoint: URL
+    private let apiKeyProvider: OpenAITranslationAPIKeyProviding
+    private let httpClient: OpenAITranslationHTTPClient
+
+    init(
+        endpoint: URL = URL(string: "https://api.openai.com/v1/responses")!,
+        apiKeyProvider: OpenAITranslationAPIKeyProviding = KeychainOpenAITranslationAPIKeyProvider(),
+        httpClient: OpenAITranslationHTTPClient = URLSession.shared
+    ) {
+        self.endpoint = endpoint
+        self.apiKeyProvider = apiKeyProvider
+        self.httpClient = httpClient
+    }
 
     func translate(
         _ text: String,
@@ -12,7 +39,7 @@ actor OpenAITranslationService {
     ) async throws -> String {
         guard !text.isEmpty else { return text }
         guard selectedModel.isEnabled else { return text }
-        guard let apiKey = try OpenAIAPIKeyStore.readAPIKey(), !apiKey.isEmpty else {
+        guard let apiKey = try apiKeyProvider.readAPIKey(), !apiKey.isEmpty else {
             throw OpenAITranslationError.missingAPIKey
         }
 
@@ -32,7 +59,7 @@ actor OpenAITranslationService {
             )
         )
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await httpClient.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {
             throw OpenAITranslationError.invalidResponse
         }
@@ -96,7 +123,7 @@ private struct OpenAIErrorBody: Decodable {
     let message: String
 }
 
-enum OpenAITranslationError: LocalizedError {
+enum OpenAITranslationError: LocalizedError, Equatable {
     case missingAPIKey
     case missingAzureEndpoint
     case missingAzureAPIKey

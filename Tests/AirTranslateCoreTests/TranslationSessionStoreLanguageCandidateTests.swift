@@ -203,7 +203,7 @@ struct TranslationSessionStoreLanguageCandidateTests {
     }
 
     @Test
-    func openAITranslationSessionUpdateKeepsMinimalOutputConfig() throws {
+    func openAITranslationSessionUpdateOmitsInputTranscription() throws {
         let payload = try OpenAIRealtimeTranscriber.sessionUpdatePayload(
             language: LanguageOption.supported[3],
             modelID: "gpt-realtime-translate",
