@@ -3,7 +3,6 @@ import AppKit
 import AirTranslateCore
 import Foundation
 import Observation
-import os
 
 private enum SettingsKey {
     static let sourceLanguageID = "sourceLanguageID"
@@ -89,10 +88,6 @@ final class TranslationSessionStore {
     private static let appleAutoDetectionMinimumConfidence = 0.35
     private static let appleAutoDetectionLanguageSwitchMinimumConfidence = 0.72
     private static let isAppleSourceAutoDetectionTemporarilyDisabled = true
-    private static let logger = Logger(
-        subsystem: "dev.appcaster.AirTranslate",
-        category: "Session"
-    )
 
     var isRunning = false
     var isPaused = false
@@ -422,9 +417,6 @@ final class TranslationSessionStore {
                 warmTranslationSession()
             } catch {
                 guard !Task.isCancelled else { return }
-                Self.logger.error(
-                    "session start failed: \(error.localizedDescription, privacy: .public) details=\(String(describing: error), privacy: .public)"
-                )
                 isRunning = false
                 stopCaptioners()
                 await stopCapture()
@@ -612,24 +604,17 @@ final class TranslationSessionStore {
         switch openAIProvider {
         case .openAI:
             guard let key = try OpenAIAPIKeyStore.readAPIKey(), !key.isEmpty else {
-                Self.logger.error("resolveOpenAIRealtimeProviderConfig: missing OpenAI API key")
                 throw OpenAITranslationError.missingAPIKey
             }
-            Self.logger.notice("resolveOpenAIRealtimeProviderConfig: using OpenAI provider")
             return .openAI(apiKey: key)
         case .azure:
             guard let endpoint = AzureOpenAIConfigStore.readEndpoint(),
                   let host = AzureOpenAIEndpoint.host(from: endpoint) else {
-                Self.logger.error("resolveOpenAIRealtimeProviderConfig: missing Azure endpoint")
                 throw OpenAITranslationError.missingAzureEndpoint
             }
             guard let key = try AzureOpenAIConfigStore.readAPIKey(), !key.isEmpty else {
-                Self.logger.error("resolveOpenAIRealtimeProviderConfig: missing Azure API key")
                 throw OpenAITranslationError.missingAzureAPIKey
             }
-            Self.logger.notice(
-                "resolveOpenAIRealtimeProviderConfig: using Azure provider host=\(host, privacy: .private(mask: .hash))"
-            )
             let deployment = customAzureTranscriptionDeployment
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             return .azure(
@@ -920,8 +905,18 @@ final class TranslationSessionStore {
         openAITranscriber = OpenAIRealtimeTranscriber()
         openAITranscriber.delegate = self
 
-        Self.logger.notice(
-            "startCaptioners provider=\(self.openAIProvider.rawValue, privacy: .public) transcriptionModel=\(self.openAITranscriptionModel.rawValue, privacy: .public) translationModel=\(self.openAITranslationModel.rawValue, privacy: .public) source=\(self.sourceLanguage.id, privacy: .public) target=\(self.targetLanguage.id, privacy: .public)"
+        let customTranscription = resolvedCustomTranscriptionModelName()
+        let customTranslation = resolvedCustomTranslationModelName()
+        let customAzureDeployment = customAzureTranscriptionDeployment
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        NSLog(
+            "[AirTranslate] startCaptioners provider=%@ transcriptionModel=%@ translationModel=%@ overrideTranscription=%@ overrideTranslation=%@ azureDeployment=%@",
+            self.openAIProvider.rawValue,
+            self.openAITranscriptionModel.rawValue,
+            self.openAITranslationModel.rawValue,
+            customTranscription ?? "<default>",
+            customTranslation ?? "<default>",
+            customAzureDeployment.isEmpty ? "<default>" : customAzureDeployment
         )
 
         if openAITranslationModel.usesRealtimeAudioTranslation {
@@ -929,7 +924,7 @@ final class TranslationSessionStore {
             try await openAITranscriber.startRealtimeTranslationOnly(
                 language: targetLanguage,
                 model: openAITranslationModel,
-                modelIDOverride: resolvedCustomTranslationModelName(),
+                modelIDOverride: customTranslation,
                 providerConfig: providerConfig
             )
         } else if openAITranscriptionModel.isEnabled {
@@ -937,11 +932,10 @@ final class TranslationSessionStore {
             try await openAITranscriber.start(
                 language: sourceLanguage,
                 model: openAITranscriptionModel,
-                modelIDOverride: resolvedCustomTranscriptionModelName(),
+                modelIDOverride: customTranscription,
                 providerConfig: providerConfig
             )
         } else {
-            Self.logger.notice("startCaptioners using Apple SpeechTranscriber path")
             try await transcriber.start(languages: await appleSpeechLanguagesForCurrentMode())
         }
     }

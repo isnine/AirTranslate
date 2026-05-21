@@ -1048,39 +1048,6 @@ private struct GPTAPIKeyRow: View {
     }
 }
 
-private struct GPTProviderPickerRow: View {
-    let title: String
-    @Binding var selection: OpenAIProvider
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "cloud.fill")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 16)
-
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.primary)
-
-            Spacer(minLength: 6)
-
-            Picker("", selection: $selection) {
-                ForEach(OpenAIProvider.allCases) { provider in
-                    Text(provider.title).tag(provider)
-                }
-            }
-            .labelsHidden()
-            .pickerStyle(.segmented)
-            .controlSize(.small)
-            .fixedSize()
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 7)
-        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-    }
-}
-
 private struct GPTAzureConfigRow: View {
     @Binding var endpoint: String
     @Binding var apiKey: String

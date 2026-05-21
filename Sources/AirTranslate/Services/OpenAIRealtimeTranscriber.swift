@@ -127,9 +127,13 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
         modelIDOverride: String? = nil,
         providerConfig: OpenAIRealtimeProviderConfig
     ) async throws {
-        let resolvedID = modelIDOverride?
+        let trimmedOverride = modelIDOverride?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-            .nonEmpty ?? model.rawValue
+            .nonEmpty
+        let resolvedID = trimmedOverride ?? model.rawValue
+        Self.logger.notice(
+            "OpenAIRealtimeTranscriber.start(transcription) defaultModel=\(model.rawValue, privacy: .public) override=\(trimmedOverride ?? "<nil>", privacy: .public) resolvedModelID=\(resolvedID, privacy: .public)"
+        )
         try await start(
             language: language,
             modelID: resolvedID,
@@ -145,9 +149,13 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
         modelIDOverride: String? = nil,
         providerConfig: OpenAIRealtimeProviderConfig
     ) async throws {
-        let resolvedID = modelIDOverride?
+        let trimmedOverride = modelIDOverride?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-            .nonEmpty ?? model.apiModelID
+            .nonEmpty
+        let resolvedID = trimmedOverride ?? model.apiModelID
+        Self.logger.notice(
+            "OpenAIRealtimeTranscriber.start(translationOnly) defaultModel=\(model.apiModelID, privacy: .public) override=\(trimmedOverride ?? "<nil>", privacy: .public) resolvedModelID=\(resolvedID, privacy: .public)"
+        )
         try await start(
             language: language,
             modelID: resolvedID,
@@ -203,7 +211,7 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
         }
 
         Self.logger.notice(
-            "OpenAIRealtimeTranscriber.start mode=\(String(describing: outputMode), privacy: .public) provider=\(providerConfig.kindLogDescription, privacy: .public) host=\(providerConfig.host, privacy: .private(mask: .hash)) model=\(modelID, privacy: .public) language=\(language.id, privacy: .public) url=\(url.absoluteString, privacy: .private(mask: .hash))"
+            "OpenAIRealtimeTranscriber.start mode=\(String(describing: outputMode), privacy: .public) provider=\(providerConfig.kindLogDescription, privacy: .public) host=\(providerConfig.host, privacy: .public) model=\(modelID, privacy: .public) language=\(language.id, privacy: .public) url=\(url.absoluteString, privacy: .public)"
         )
 
         var request = URLRequest(url: url)
@@ -288,8 +296,8 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
             outputMode: outputMode,
             providerKind: providerKind
         )
-        Self.logger.debug(
-            "OpenAIRealtimeTranscriber sending session.update mode=\(String(describing: self.outputMode), privacy: .public) bytes=\(text.utf8.count, privacy: .public)"
+        Self.logger.notice(
+            "OpenAIRealtimeTranscriber session.update mode=\(String(describing: self.outputMode), privacy: .public) modelID=\(modelID, privacy: .public) payload=\(text, privacy: .public)"
         )
         do {
             try await send(text)
@@ -312,14 +320,11 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
         switch outputMode {
         case .transcription:
             let sessionType: String
-            let transcriptionModelID: String
             switch providerKind {
             case .openAI:
                 sessionType = "transcription"
-                transcriptionModelID = modelID
             case .azure:
                 sessionType = "realtime"
-                transcriptionModelID = OpenAIRealtimeTranscriptionModel.gptRealtimeWhisper.rawValue
             }
 
             let event = OpenAIRealtimeTranscriptionSessionUpdateEvent(
@@ -329,7 +334,7 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
                         input: OpenAIRealtimeTranscriptionAudioInput(
                             format: OpenAIRealtimeAudioFormat(type: "audio/pcm", rate: Self.realtimeAudioSampleRate),
                             transcription: OpenAIRealtimeTranscriptionConfig(
-                                model: transcriptionModelID,
+                                model: modelID,
                                 language: language.openAILanguageCode
                             ),
                             turnDetection: .lowLatencyServerVAD,
@@ -347,7 +352,7 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
             case .azure:
                 input = OpenAIRealtimeTranslationAudioInput(
                     transcription: OpenAIRealtimeTranscriptionConfig(
-                        model: OpenAIRealtimeTranscriptionModel.gptRealtimeWhisper.rawValue
+                        model: modelID
                     ),
                     noiseReduction: OpenAIRealtimeNoiseReduction(type: "near_field")
                 )
