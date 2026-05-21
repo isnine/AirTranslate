@@ -1,7 +1,6 @@
 import AVFoundation
 import CoreMedia
 import Foundation
-import os
 
 struct OpenAIRealtimeProviderConfig: Sendable {
     enum Kind: Sendable {
@@ -76,13 +75,6 @@ struct OpenAIRealtimeProviderConfig: Sendable {
             request.setValue(apiKey, forHTTPHeaderField: "api-key")
         }
     }
-
-    var kindLogDescription: String {
-        switch kind {
-        case .openAI: "openAI"
-        case .azure: "azure"
-        }
-    }
 }
 
 private extension String {
@@ -98,11 +90,6 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
         * maxAudioChunkMilliseconds
         / 1_000
 
-    private static let logger = Logger(
-        subsystem: "dev.appcaster.AirTranslate",
-        category: "OpenAIRealtime"
-    )
-
     enum OutputMode {
         case transcription
         case translationOnly
@@ -112,8 +99,6 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
 
     private let stateLock = NSLock()
     private let conversionLock = NSLock()
-    private let urlSessionDelegate = OpenAIRealtimeURLSessionDelegate()
-    private var urlSession: URLSession?
     private var webSocketTask: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var language = LanguageOption.supported[0]
@@ -131,9 +116,6 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .nonEmpty
         let resolvedID = trimmedOverride ?? model.rawValue
-        Self.logger.notice(
-            "OpenAIRealtimeTranscriber.start(transcription) defaultModel=\(model.rawValue, privacy: .public) override=\(trimmedOverride ?? "<nil>", privacy: .public) resolvedModelID=\(resolvedID, privacy: .public)"
-        )
         try await start(
             language: language,
             modelID: resolvedID,
@@ -153,9 +135,6 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .nonEmpty
         let resolvedID = trimmedOverride ?? model.apiModelID
-        Self.logger.notice(
-            "OpenAIRealtimeTranscriber.start(translationOnly) defaultModel=\(model.apiModelID, privacy: .public) override=\(trimmedOverride ?? "<nil>", privacy: .public) resolvedModelID=\(resolvedID, privacy: .public)"
-        )
         try await start(
             language: language,
             modelID: resolvedID,
@@ -175,15 +154,9 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
         stop()
 
         guard isEnabled else {
-            Self.logger.notice(
-                "OpenAIRealtimeTranscriber.start skipped (disabled). mode=\(String(describing: outputMode), privacy: .public) model=\(modelID, privacy: .public)"
-            )
             return
         }
         guard !providerConfig.apiKey.isEmpty else {
-            Self.logger.error(
-                "OpenAIRealtimeTranscriber.start aborted: missing api key. provider=\(providerConfig.kindLogDescription, privacy: .public)"
-            )
             throw OpenAITranslationError.missingAPIKey
         }
 
@@ -194,32 +167,20 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
         switch outputMode {
         case .transcription:
             guard let transcriptionURL = providerConfig.transcriptionURL() else {
-                Self.logger.error(
-                    "OpenAIRealtimeTranscriber.start aborted: provider \(providerConfig.kindLogDescription, privacy: .public) returned no transcription URL"
-                )
                 throw OpenAITranslationError.transcriptionEndpointUnsupported
             }
             url = transcriptionURL
         case .translationOnly:
             guard let translationURL = providerConfig.translationURL(modelID: modelID) else {
-                Self.logger.error(
-                    "OpenAIRealtimeTranscriber.start aborted: provider \(providerConfig.kindLogDescription, privacy: .public) returned no translation URL for model=\(modelID, privacy: .public)"
-                )
                 throw OpenAITranslationError.invalidResponse
             }
             url = translationURL
         }
 
-        Self.logger.notice(
-            "OpenAIRealtimeTranscriber.start mode=\(String(describing: outputMode), privacy: .public) provider=\(providerConfig.kindLogDescription, privacy: .public) host=\(providerConfig.host, privacy: .public) model=\(modelID, privacy: .public) language=\(language.id, privacy: .public) url=\(url.absoluteString, privacy: .public)"
-        )
-
         var request = URLRequest(url: url)
         providerConfig.apply(to: &request)
 
-        let urlSession = URLSession(configuration: .default, delegate: urlSessionDelegate, delegateQueue: nil)
-        self.urlSession = urlSession
-        let webSocketTask = urlSession.webSocketTask(with: request)
+        let webSocketTask = URLSession.shared.webSocketTask(with: request)
         self.webSocketTask = webSocketTask
         webSocketTask.resume()
 
@@ -256,9 +217,6 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
 
             webSocketTask.send(.string(text)) { [weak self] error in
                 guard let error, let self else { return }
-                Self.logger.error(
-                    "OpenAIRealtimeTranscriber audio append failed: \(error.localizedDescription, privacy: .public)"
-                )
                 self.delegate?.liveSpeechTranscriber(self.proxyTranscriber, didFail: error)
             }
         }
@@ -271,18 +229,12 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
     }
 
     func stop() {
-        let hadTask = webSocketTask != nil
         setPaused(false)
         receiveTask?.cancel()
         receiveTask = nil
         webSocketTask?.cancel(with: .goingAway, reason: nil)
         webSocketTask = nil
-        urlSession?.invalidateAndCancel()
-        urlSession = nil
         realtimeTranscriptText = ""
-        if hadTask {
-            Self.logger.notice("OpenAIRealtimeTranscriber.stop closed websocket")
-        }
     }
 
     private func sendSessionUpdate(
@@ -296,18 +248,7 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
             outputMode: outputMode,
             providerKind: providerKind
         )
-        Self.logger.notice(
-            "OpenAIRealtimeTranscriber session.update mode=\(String(describing: self.outputMode), privacy: .public) modelID=\(modelID, privacy: .public) payload=\(text, privacy: .public)"
-        )
-        do {
-            try await send(text)
-            Self.logger.notice("OpenAIRealtimeTranscriber session.update accepted by socket")
-        } catch {
-            Self.logger.error(
-                "OpenAIRealtimeTranscriber session.update failed: \(error.localizedDescription, privacy: .public)"
-            )
-            throw error
-        }
+        try await send(text)
     }
 
     static func sessionUpdatePayload(
@@ -399,9 +340,6 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
                 handleEventText(text)
             } catch {
                 guard !Task.isCancelled else { return }
-                Self.logger.error(
-                    "OpenAIRealtimeTranscriber receive loop failed: \(error.localizedDescription, privacy: .public)"
-                )
                 delegate?.liveSpeechTranscriber(proxyTranscriber, didFail: error)
                 return
             }
@@ -412,21 +350,7 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
         guard let data = text.data(using: .utf8),
               let event = try? JSONDecoder().decode(OpenAIRealtimeTranscriptionEvent.self, from: data)
         else {
-            Self.logger.debug(
-                "OpenAIRealtimeTranscriber received undecodable event (bytes=\(text.utf8.count, privacy: .public))"
-            )
             return
-        }
-
-        switch event.type {
-        case "session.created", "session.updated":
-            Self.logger.notice("OpenAIRealtimeTranscriber event \(event.type, privacy: .public)")
-        case "error":
-            Self.logger.error(
-                "OpenAIRealtimeTranscriber server error: \(event.error?.message ?? "<no message>", privacy: .public) raw=\(text, privacy: .public)"
-            )
-        default:
-            Self.logger.debug("OpenAIRealtimeTranscriber event \(event.type, privacy: .public)")
         }
 
         switch event.type {
@@ -699,59 +623,6 @@ private struct OpenAIRealtimeTranscriptionEvent: Decodable {
 
 private struct OpenAIRealtimeErrorBody: Decodable {
     let message: String?
-}
-
-private final class OpenAIRealtimeURLSessionDelegate: NSObject, URLSessionWebSocketDelegate, URLSessionTaskDelegate, @unchecked Sendable {
-    private let logger = Logger(
-        subsystem: "dev.appcaster.AirTranslate",
-        category: "OpenAIRealtime"
-    )
-
-    func urlSession(
-        _ session: URLSession,
-        webSocketTask: URLSessionWebSocketTask,
-        didOpenWithProtocol protocol: String?
-    ) {
-        logger.notice(
-            "OpenAIRealtimeTranscriber websocket opened url=\(webSocketTask.currentRequest?.url?.absoluteString ?? "<unknown>", privacy: .private(mask: .hash)) protocol=\(`protocol` ?? "<none>", privacy: .public)"
-        )
-    }
-
-    func urlSession(
-        _ session: URLSession,
-        webSocketTask: URLSessionWebSocketTask,
-        didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
-        reason: Data?
-    ) {
-        let reasonText = reason.flatMap { String(data: $0, encoding: .utf8) } ?? "<none>"
-        logger.notice(
-            "OpenAIRealtimeTranscriber websocket closed code=\(closeCode.rawValue, privacy: .public) reason=\(reasonText, privacy: .public)"
-        )
-    }
-
-    func urlSession(
-        _ session: URLSession,
-        task: URLSessionTask,
-        didFinishCollecting metrics: URLSessionTaskMetrics
-    ) {
-        guard let transaction = metrics.transactionMetrics.last else { return }
-        let statusCode = (transaction.response as? HTTPURLResponse)?.statusCode ?? -1
-        logger.notice(
-            "OpenAIRealtimeTranscriber task metrics url=\(task.currentRequest?.url?.absoluteString ?? "<unknown>", privacy: .private(mask: .hash)) status=\(statusCode, privacy: .public) networkProtocol=\(transaction.networkProtocolName ?? "<unknown>", privacy: .public) reusedConnection=\(transaction.isReusedConnection, privacy: .public)"
-        )
-    }
-
-    func urlSession(
-        _ session: URLSession,
-        task: URLSessionTask,
-        didCompleteWithError error: Error?
-    ) {
-        guard let error else { return }
-        let statusCode = (task.response as? HTTPURLResponse)?.statusCode ?? -1
-        logger.error(
-            "OpenAIRealtimeTranscriber task completed with error status=\(statusCode, privacy: .public) url=\(task.currentRequest?.url?.absoluteString ?? "<unknown>", privacy: .private(mask: .hash)) error=\(error.localizedDescription, privacy: .public) details=\(String(describing: error), privacy: .public)"
-        )
-    }
 }
 
 private enum OpenAIRealtimeTranscriberError: LocalizedError {

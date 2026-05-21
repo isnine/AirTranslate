@@ -907,17 +907,6 @@ final class TranslationSessionStore {
 
         let customTranscription = resolvedCustomTranscriptionModelName()
         let customTranslation = resolvedCustomTranslationModelName()
-        let customAzureDeployment = customAzureTranscriptionDeployment
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        NSLog(
-            "[AirTranslate] startCaptioners provider=%@ transcriptionModel=%@ translationModel=%@ overrideTranscription=%@ overrideTranslation=%@ azureDeployment=%@",
-            self.openAIProvider.rawValue,
-            self.openAITranscriptionModel.rawValue,
-            self.openAITranslationModel.rawValue,
-            customTranscription ?? "<default>",
-            customTranslation ?? "<default>",
-            customAzureDeployment.isEmpty ? "<default>" : customAzureDeployment
-        )
 
         if openAITranslationModel.usesRealtimeAudioTranslation {
             let providerConfig = try resolveOpenAIRealtimeProviderConfig()
