@@ -7,6 +7,13 @@ struct SettingsView: View {
     @State private var azureAPIKey = ""
     @State private var configurationNotice: String?
     @State private var shouldFocusAPIKey = false
+    @State private var saveAlert: SaveAlert?
+
+    private struct SaveAlert: Identifiable {
+        let id = UUID()
+        let title: String
+        let message: String
+    }
 
     var body: some View {
         ScrollView {
@@ -30,6 +37,13 @@ struct SettingsView: View {
             configurationNotice = nil
             shouldFocusAPIKey = false
             azureEndpoint = session.azureOpenAIEndpoint
+        }
+        .alert(item: $saveAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                dismissButton: .default(Text("OK"))
+            )
         }
     }
 
@@ -252,9 +266,17 @@ struct SettingsView: View {
             azureEndpoint = session.azureOpenAIEndpoint
             configurationNotice = nil
             shouldFocusAPIKey = false
+            saveAlert = SaveAlert(
+                title: AppText.azureOpenAIConfigSavedTitle,
+                message: session.statusMessage
+            )
         } else {
             configurationNotice = session.statusMessage
             shouldFocusAPIKey = true
+            saveAlert = SaveAlert(
+                title: AppText.azureOpenAIConfigSaveFailedTitle,
+                message: session.statusMessage
+            )
         }
     }
 

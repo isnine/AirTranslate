@@ -33,14 +33,22 @@ struct OpenAIRealtimeModelPickers: View {
                 )
             )
 
-            SettingsCompactMenuRow(
-                title: AppText.gptTranscriptionModel,
-                systemImage: "waveform.circle.fill",
-                value: session.openAITranscriptionModel.title
-            ) {
-                ForEach(OpenAIRealtimeTranscriptionModel.allCases) { model in
-                    Button(model.title) {
-                        session.openAITranscriptionModel = model
+            if session.openAITranslationModel.usesRealtimeAudioTranslation {
+                SettingsCompactInfoRow(
+                    title: AppText.gptTranscriptionLockedByRealtimeTitle,
+                    detail: AppText.gptTranscriptionLockedByRealtimeDetail,
+                    systemImage: "waveform.circle.fill"
+                )
+            } else {
+                SettingsCompactMenuRow(
+                    title: AppText.gptTranscriptionModel,
+                    systemImage: "waveform.circle.fill",
+                    value: session.openAITranscriptionModel.title
+                ) {
+                    ForEach(OpenAIRealtimeTranscriptionModel.allCases) { model in
+                        Button(model.title) {
+                            session.openAITranscriptionModel = model
+                        }
                     }
                 }
             }

@@ -57,7 +57,14 @@ enum AzureOpenAIConfigStore {
         query[kSecValueData as String] = data
         query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
 
-        let status = SecItemAdd(query as CFDictionary, nil)
+        var status = SecItemAdd(query as CFDictionary, nil)
+        if status == errSecDuplicateItem {
+            let attributes: [String: Any] = [
+                kSecValueData as String: data,
+                kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            ]
+            status = SecItemUpdate(baseQuery() as CFDictionary, attributes as CFDictionary)
+        }
         guard status == errSecSuccess else {
             throw OpenAIAPIKeyStoreError.keychainStatus(status)
         }

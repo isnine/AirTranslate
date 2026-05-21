@@ -266,6 +266,18 @@ enum AppText {
         japanese: "Azure OpenAI設定を保存しました。",
         chineseSimplified: "已保存 Azure OpenAI 配置。"
     )
+    static let azureOpenAIConfigSavedTitle = localized(
+        english: "Saved",
+        korean: "저장됨",
+        japanese: "保存しました",
+        chineseSimplified: "已保存"
+    )
+    static let azureOpenAIConfigSaveFailedTitle = localized(
+        english: "Save Failed",
+        korean: "저장 실패",
+        japanese: "保存に失敗しました",
+        chineseSimplified: "保存失败"
+    )
     static let azureOpenAIConfigRemoved = localized(
         english: "Azure OpenAI configuration removed.",
         korean: "Azure OpenAI 설정이 삭제되었습니다.",
@@ -337,6 +349,18 @@ enum AppText {
         korean: "전사",
         japanese: "文字起こし",
         chineseSimplified: "转写"
+    )
+    static let gptTranscriptionLockedByRealtimeTitle = localized(
+        english: "Transcription handled by realtime translation",
+        korean: "전사는 실시간 번역이 처리합니다",
+        japanese: "文字起こしはリアルタイム翻訳が担当します",
+        chineseSimplified: "转写由实时翻译模型负责"
+    )
+    static let gptTranscriptionLockedByRealtimeDetail = localized(
+        english: "gpt-realtime-translate works directly on audio, so a separate transcription model is not used.",
+        korean: "gpt-realtime-translate는 오디오를 직접 처리하므로 별도의 전사 모델은 사용되지 않습니다.",
+        japanese: "gpt-realtime-translateは音声を直接処理するため、別途の文字起こしモデルは使用しません。",
+        chineseSimplified: "gpt-realtime-translate 直接基于音频翻译,因此不再使用单独的转写模型。"
     )
     static let gptTranslationModel = localized(
         english: "Auto Translation",
@@ -446,7 +470,7 @@ enum AppText {
     static let liveOutput = localized(english: "Live Output", korean: "실시간 출력", japanese: "リアルタイム出力", chineseSimplified: "实时输出")
     static let library = localized(english: "Library", korean: "저장소", japanese: "ライブラリ", chineseSimplified: "资料库")
     static let dubbing = localized(english: "Dubbing", korean: "더빙", japanese: "音声出力", chineseSimplified: "配音")
-    static let voiceOutput = localized(english: "Voice Output", korean: "음성 출력", japanese: "音声出力", chineseSimplified: "语音输出")
+    static let voiceOutput = localized(english: "System translated voice", korean: "시스템 번역 음성", japanese: "システム翻訳音声", chineseSimplified: "系统翻译语音")
     static let menuBarTitle = localized(english: "Captions", korean: "자막")
     static let menuBarRunningTitle = localized(english: "Live", korean: "기록 중")
     static let menuBarPausedTitle = localized(english: "Paused", korean: "일시정지")

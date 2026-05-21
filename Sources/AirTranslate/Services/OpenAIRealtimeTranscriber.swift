@@ -367,7 +367,12 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
     }
 
     private func appendRealtimeTranscriptDelta(_ delta: String) {
-        realtimeTranscriptText += delta
+        // OpenAI Realtime occasionally emits U+FFFD when a model-token boundary
+        // splits a multi-byte character. The full transcript arrives correctly
+        // on `*.done`, so strip FFFD from partials to avoid showing � in the UI.
+        let sanitized = delta.replacingOccurrences(of: "\u{FFFD}", with: "")
+        guard !sanitized.isEmpty else { return }
+        realtimeTranscriptText += sanitized
         publish(text: realtimeTranscriptText)
     }
 

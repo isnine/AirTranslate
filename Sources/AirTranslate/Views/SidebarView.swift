@@ -347,6 +347,13 @@ private struct ConfigurationSheetView: View {
 
     @State private var azureEndpoint: String = ""
     @State private var azureAPIKey: String = ""
+    @State private var saveAlert: SaveAlert?
+
+    private struct SaveAlert: Identifiable {
+        let id = UUID()
+        let title: String
+        let message: String
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -417,6 +424,13 @@ private struct ConfigurationSheetView: View {
         .onAppear {
             session.refreshModelAvailability()
             azureEndpoint = session.azureOpenAIEndpoint
+        }
+        .alert(item: $saveAlert) { alert in
+            Alert(
+                title: Text(alert.title),
+                message: Text(alert.message),
+                dismissButton: .default(Text("OK"))
+            )
         }
     }
 
@@ -489,12 +503,23 @@ private struct ConfigurationSheetView: View {
                         hasConfig: session.hasAzureOpenAIConfig,
                         notice: configurationNotice,
                         save: {
-                            session.saveAzureOpenAIConfig(endpoint: azureEndpoint, apiKey: azureAPIKey)
+                            let ok = session.saveAzureOpenAIConfig(endpoint: azureEndpoint, apiKey: azureAPIKey)
                             azureAPIKey = ""
-                            if session.hasAzureOpenAIConfig {
+                            if ok {
                                 azureEndpoint = session.azureOpenAIEndpoint
                                 configurationNotice = nil
                                 shouldFocusOpenAIAPIKey = false
+                                saveAlert = SaveAlert(
+                                    title: AppText.azureOpenAIConfigSavedTitle,
+                                    message: session.statusMessage
+                                )
+                            } else {
+                                configurationNotice = session.statusMessage
+                                shouldFocusOpenAIAPIKey = true
+                                saveAlert = SaveAlert(
+                                    title: AppText.azureOpenAIConfigSaveFailedTitle,
+                                    message: session.statusMessage
+                                )
                             }
                         },
                         remove: {
@@ -569,7 +594,7 @@ private struct ConfigurationSheetView: View {
                 }
 
                 CompactToggleRow(
-                    title: ProcessingEngine.current(for: session) == .gpt
+                    title: session.isUsingOpenAIRealtimeTranslation
                         ? AppText.translatedVoiceOutput
                         : AppText.voiceOutput,
                     systemImage: "speaker.wave.2.fill",
