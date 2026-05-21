@@ -370,7 +370,7 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
             guard outputMode == .translationOnly,
                   let transcript = event.transcript,
                   !transcript.isEmpty else { return }
-            publishTranslation(text: transcript, isFinal: true)
+            publish(text: transcript)
             realtimeTranscriptText = ""
         case "session.output_audio.delta":
             guard outputMode == .translationOnly,
@@ -403,18 +403,13 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
                 confidence: 0.5
             )
         case .translationOnly:
-            publishTranslation(text: text, isFinal: false)
+            delegate?.liveSpeechTranscriber(
+                proxyTranscriber,
+                didTranslate: text,
+                language: language,
+                confidence: 0.5
+            )
         }
-    }
-
-    private func publishTranslation(text: String, isFinal: Bool) {
-        delegate?.liveSpeechTranscriber(
-            proxyTranscriber,
-            didTranslate: text,
-            language: language,
-            confidence: 0.5,
-            isFinal: isFinal
-        )
     }
 
     private var proxyTranscriber: LiveSpeechTranscriber {
@@ -580,7 +575,7 @@ private struct OpenAIRealtimeTurnDetection: Encodable {
 
     static let lowLatencyServerVAD = OpenAIRealtimeTurnDetection(
         type: "server_vad",
-        threshold: 0.5,
+        threshold: 0.42,
         prefixPaddingMilliseconds: 120,
         silenceDurationMilliseconds: 220
     )

@@ -278,7 +278,6 @@ final class TranslationSessionStore {
     private var translatedSegmentsBySource: [String: String] = [:]
     private var translationCacheKeyOrder: [String] = []
     private var realtimeTranslationOnlyText = ""
-    private var realtimeTranslationOnlyCommittedText = ""
     private var activeAutosaveSourceText = ""
     private var activeAutosaveTranslatedText = ""
     private var isRestoringSelectedSettings = false
@@ -998,7 +997,6 @@ final class TranslationSessionStore {
         translationBurstStartedAt = Date.distantPast
         resetTranslationCache()
         realtimeTranslationOnlyText = ""
-        realtimeTranslationOnlyCommittedText = ""
         activeAutosaveSourceText = ""
         activeAutosaveTranslatedText = ""
         stopSpeaking()
@@ -2515,21 +2513,19 @@ final class TranslationSessionStore {
         translationCacheKeyOrder.removeAll()
     }
 
-    private func appendRealtimeTranslationOnly(_ text: String, isFinal: Bool) {
+    private func appendRealtimeTranslationOnly(_ text: String) {
         guard isRunning, !isPaused else { return }
 
         guard text.rangeOfCharacter(from: .whitespacesAndNewlines.inverted) != nil
             || !realtimeTranslationOnlyText.isEmpty else { return }
 
-        if isFinal {
-            commitRealtimeTranslationOnlyText(text)
-        } else if text.hasPrefix(realtimeTranslationOnlyText) {
+        if text.hasPrefix(realtimeTranslationOnlyText) {
             realtimeTranslationOnlyText = text
         } else if !realtimeTranslationOnlyText.hasSuffix(text) {
             realtimeTranslationOnlyText += text
         }
 
-        let translatedText = visibleRealtimeTranslationOnlyText().trimmingCharacters(in: .whitespacesAndNewlines)
+        let translatedText = realtimeTranslationOnlyText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !translatedText.isEmpty else { return }
 
         lastRecognizedText = translatedText
@@ -2547,7 +2543,7 @@ final class TranslationSessionStore {
                 translatedText: translatedText,
                 translatedSourceText: sourceText,
                 createdAt: existingLine.createdAt,
-                isFinal: isFinal,
+                isFinal: false,
                 revision: existingLine.revision + 1,
                 usesLongSessionDisplay: usesLongSessionMode
             )
@@ -2557,7 +2553,7 @@ final class TranslationSessionStore {
                 translatedText: translatedText,
                 translatedSourceText: sourceText,
                 createdAt: Date(),
-                isFinal: isFinal,
+                isFinal: false,
                 revision: 1,
                 usesLongSessionDisplay: usesLongSessionMode
             )
@@ -2571,44 +2567,6 @@ final class TranslationSessionStore {
             : translatedText
         updateFloatingTranslationPresentation(floatingTranslatedText, sourceText: sourceText)
         speakTranslatedDeltaIfNeeded(translatedText)
-    }
-
-    private func commitRealtimeTranslationOnlyText(_ text: String) {
-        let finalText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        realtimeTranslationOnlyText = ""
-        guard !finalText.isEmpty else { return }
-
-        let committedText = realtimeTranslationOnlyCommittedText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !committedText.isEmpty else {
-            realtimeTranslationOnlyCommittedText = finalText
-            return
-        }
-
-        let normalizedCommitted = normalizedTranscriptForComparison(committedText)
-        let normalizedFinal = normalizedTranscriptForComparison(finalText)
-        if isWholeTextPrefix(normalizedCommitted, of: normalizedFinal) {
-            realtimeTranslationOnlyCommittedText = finalText
-            return
-        }
-        guard !normalizedCommitted.hasSuffix(normalizedFinal) else { return }
-
-        realtimeTranslationOnlyCommittedText = committedText + "\n" + finalText
-    }
-
-    private func visibleRealtimeTranslationOnlyText() -> String {
-        let committedText = realtimeTranslationOnlyCommittedText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let partialText = realtimeTranslationOnlyText.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !committedText.isEmpty else { return partialText }
-        guard !partialText.isEmpty else { return committedText }
-
-        let normalizedCommitted = normalizedTranscriptForComparison(committedText)
-        let normalizedPartial = normalizedTranscriptForComparison(partialText)
-        if isWholeTextPrefix(normalizedCommitted, of: normalizedPartial) {
-            return partialText
-        }
-
-        return committedText + "\n" + partialText
     }
 
     private func requestTranslation(for line: CaptionLine, source: LanguageOption, target: LanguageOption) {
@@ -3124,19 +3082,7 @@ extension TranslationSessionStore: LiveSpeechTranscriberDelegate {
         confidence: Double
     ) {
         Task { @MainActor in
-            appendRealtimeTranslationOnly(text, isFinal: false)
-        }
-    }
-
-    nonisolated func liveSpeechTranscriber(
-        _ transcriber: LiveSpeechTranscriber,
-        didTranslate text: String,
-        language: LanguageOption,
-        confidence: Double,
-        isFinal: Bool
-    ) {
-        Task { @MainActor in
-            appendRealtimeTranslationOnly(text, isFinal: isFinal)
+            appendRealtimeTranslationOnly(text)
         }
     }
 
