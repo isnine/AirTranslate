@@ -16,6 +16,8 @@ private enum SettingsKey {
     static let floatingCaptionDisplayMode = "floatingCaptionDisplayMode"
     static let floatingCaptionTextSize = "floatingCaptionTextSize"
     static let floatingCaptionLineCount = "floatingCaptionLineCount"
+    static let floatingCaptionTextAlignment = "floatingCaptionTextAlignment"
+    static let isFloatingCaptionImmediateDisplayEnabled = "isFloatingCaptionImmediateDisplayEnabled"
     static let paragraphBreakSilenceInterval = "paragraphBreakSilenceInterval"
     static let savedTranscriptContentMode = "savedTranscriptContentMode"
     static let sessionDurationMode = "sessionDurationMode"
@@ -81,10 +83,6 @@ final class TranslationSessionStore {
     private static let largeTranscriptPresentationInterval: TimeInterval = 0.35
     private static let largeTranscriptTranslationCharacterLimit = 4_000
     private static let veryLargeTranscriptTranslationCharacterLimit = 10_000
-    private static let floatingCaptionEarlyRevisionWindow = 0.45
-    private static let floatingCaptionImmediateExtensionCharacterLimit = 28
-    private static let minimumFloatingCaptionDwell = 1.4
-    private static let maximumFloatingCaptionDwell = 3.6
     private static let appleAutoDetectionMinimumConfidence = 0.35
     private static let appleAutoDetectionLanguageSwitchMinimumConfidence = 0.72
     private static let isAppleSourceAutoDetectionTemporarilyDisabled = true
@@ -176,6 +174,17 @@ final class TranslationSessionStore {
     }
     var floatingCaptionLineCount = FloatingCaptionLineCount.three {
         didSet { persistSelectedSettings() }
+    }
+    var floatingCaptionTextAlignment = FloatingCaptionTextAlignment.center {
+        didSet { persistSelectedSettings() }
+    }
+    var isFloatingCaptionImmediateDisplayEnabled = false {
+        didSet {
+            persistSelectedSettings()
+            if isFloatingCaptionImmediateDisplayEnabled {
+                promoteQueuedFloatingPresentationIfReady()
+            }
+        }
     }
     var paragraphBreakSilenceInterval = 5.0 {
         didSet { persistSelectedSettings() }
@@ -1070,6 +1079,15 @@ final class TranslationSessionStore {
            let lineCount = FloatingCaptionLineCount(rawValue: rawValue) {
             floatingCaptionLineCount = lineCount
         }
+        if let alignmentID = defaults.string(forKey: SettingsKey.floatingCaptionTextAlignment),
+           let alignment = FloatingCaptionTextAlignment(rawValue: alignmentID) {
+            floatingCaptionTextAlignment = alignment
+        }
+        if defaults.object(forKey: SettingsKey.isFloatingCaptionImmediateDisplayEnabled) != nil {
+            isFloatingCaptionImmediateDisplayEnabled = defaults.bool(
+                forKey: SettingsKey.isFloatingCaptionImmediateDisplayEnabled
+            )
+        }
         if defaults.object(forKey: SettingsKey.paragraphBreakSilenceInterval) != nil {
             paragraphBreakSilenceInterval = min(
                 max(defaults.double(forKey: SettingsKey.paragraphBreakSilenceInterval), 1),
@@ -1114,6 +1132,11 @@ final class TranslationSessionStore {
         defaults.set(floatingCaptionDisplayMode.id, forKey: SettingsKey.floatingCaptionDisplayMode)
         defaults.set(floatingCaptionTextSize.id, forKey: SettingsKey.floatingCaptionTextSize)
         defaults.set(floatingCaptionLineCount.id, forKey: SettingsKey.floatingCaptionLineCount)
+        defaults.set(floatingCaptionTextAlignment.id, forKey: SettingsKey.floatingCaptionTextAlignment)
+        defaults.set(
+            isFloatingCaptionImmediateDisplayEnabled,
+            forKey: SettingsKey.isFloatingCaptionImmediateDisplayEnabled
+        )
         defaults.set(paragraphBreakSilenceInterval, forKey: SettingsKey.paragraphBreakSilenceInterval)
         defaults.set(savedTranscriptContentMode.id, forKey: SettingsKey.savedTranscriptContentMode)
         defaults.set(sessionDurationMode.id, forKey: SettingsKey.sessionDurationMode)
@@ -1949,13 +1972,13 @@ final class TranslationSessionStore {
             return
         }
 
-        let normalizedCandidate = normalizedTranscriptForComparison(candidate)
-        let normalizedPresented = normalizedTranscriptForComparison(floatingPresentedSourceText)
-        guard normalizedCandidate != normalizedPresented else { return }
-
-        let now = Date()
-        if canUpdateFloatingPresentationImmediately(to: candidate, now: now)
-            || canAdvanceFloatingPresentation(now: now) {
+        if FloatingCaptionPresentationPolicy.canPresentUpdate(
+            isImmediateDisplayEnabled: isFloatingCaptionImmediateDisplayEnabled,
+            presentedText: floatingPresentedSourceText,
+            translatedText: floatingDisplayTranslationText,
+            candidateText: candidate,
+            presentedAt: floatingPresentedAt
+        ) {
             presentFloatingSourceText(candidate)
             return
         }
@@ -1964,31 +1987,20 @@ final class TranslationSessionStore {
         scheduleFloatingPresentationAdvance()
     }
 
-    private func canUpdateFloatingPresentationImmediately(to candidate: String, now: Date) -> Bool {
-        let elapsed = now.timeIntervalSince(floatingPresentedAt)
-        if elapsed <= Self.floatingCaptionEarlyRevisionWindow {
-            return true
-        }
-
-        let normalizedPresented = normalizedTranscriptForComparison(floatingPresentedSourceText)
-        let normalizedCandidate = normalizedTranscriptForComparison(candidate)
-        return normalizedPresented.count < Self.floatingCaptionImmediateExtensionCharacterLimit
-            && isWholeTextPrefix(normalizedPresented, of: normalizedCandidate)
-    }
-
     private func canAdvanceFloatingPresentation(now: Date = Date()) -> Bool {
-        guard !floatingPresentedSourceText.isEmpty else { return true }
-        return now.timeIntervalSince(floatingPresentedAt) >= floatingCaptionDwellDuration()
+        FloatingCaptionPresentationPolicy.canAdvance(
+            isImmediateDisplayEnabled: isFloatingCaptionImmediateDisplayEnabled,
+            presentedText: floatingPresentedSourceText,
+            translatedText: floatingDisplayTranslationText,
+            presentedAt: floatingPresentedAt,
+            now: now
+        )
     }
 
     private func floatingCaptionDwellDuration() -> TimeInterval {
-        let sourceLength = normalizedTranscriptForComparison(floatingPresentedSourceText).count
-        let translationLength = normalizedTranscriptForComparison(floatingDisplayTranslationText).count
-        let readableLength = max(sourceLength, translationLength)
-        let dwell = 1.1 + Double(readableLength) / 32.0
-        return min(
-            max(Self.minimumFloatingCaptionDwell, dwell),
-            Self.maximumFloatingCaptionDwell
+        FloatingCaptionPresentationPolicy.dwellDuration(
+            presentedText: floatingPresentedSourceText,
+            translatedText: floatingDisplayTranslationText
         )
     }
 

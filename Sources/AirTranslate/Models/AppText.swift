@@ -438,8 +438,38 @@ enum AppText {
         english: "Choose what appears in the detachable floating caption window.",
         korean: "따로 띄우는 플로팅 자막 창에 표시할 내용을 선택합니다."
     )
+    static let floatingTextAlignment = localized(
+        english: "Floating Text Alignment",
+        korean: "플로팅 텍스트 정렬",
+        japanese: "フローティングテキスト配置",
+        chineseSimplified: "浮动字幕对齐"
+    )
+    static let textAlignmentLeading = localized(
+        english: "Left",
+        korean: "왼쪽",
+        japanese: "左",
+        chineseSimplified: "左对齐"
+    )
+    static let textAlignmentCenter = localized(
+        english: "Center",
+        korean: "가운데",
+        japanese: "中央",
+        chineseSimplified: "居中"
+    )
     static let floatingTextSize = localized(english: "Floating Text Size", korean: "플로팅 글자 크기")
     static let floatingLineCount = localized(english: "Floating Lines", korean: "플로팅 표시 줄 수")
+    static let floatingImmediateDisplay = localized(
+        english: "Show Updates Immediately",
+        korean: "업데이트 즉시 표시",
+        japanese: "更新をすぐ表示",
+        chineseSimplified: "立即显示更新"
+    )
+    static let floatingImmediateDisplayDescription = localized(
+        english: "Shows new caption text as soon as it arrives. It feels more realtime, but recognition revisions can make the floating window flicker.",
+        korean: "새 자막 텍스트가 도착하는 즉시 표시합니다. 더 실시간처럼 느껴지지만 인식 수정 때문에 플로팅 창이 깜박일 수 있습니다.",
+        japanese: "新しい字幕テキストを到着次第表示します。よりリアルタイムになりますが、認識の修正でフローティングウィンドウがちらつくことがあります。",
+        chineseSimplified: "新字幕到达后立即显示。实时性更好，但识别结果修订时浮动窗口可能会闪动。"
+    )
     static let originalOnly = localized(english: "Original", korean: "원문", japanese: "原文", chineseSimplified: "原文")
     static let originalAndTranslation = localized(english: "Original + Translation", korean: "원문 + 번역", japanese: "原文 + 翻訳", chineseSimplified: "原文 + 译文")
     static let translationOnly = localized(english: "Translation", korean: "번역", japanese: "翻訳", chineseSimplified: "译文")

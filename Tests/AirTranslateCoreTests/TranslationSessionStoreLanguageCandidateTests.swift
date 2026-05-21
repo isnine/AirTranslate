@@ -142,6 +142,44 @@ struct TranslationSessionStoreLanguageCandidateTests {
     }
 
     @Test
+    func immediateFloatingCaptionPresentationBypassesDwell() {
+        let presentedAt = Date()
+
+        #expect(
+            FloatingCaptionPresentationPolicy.canPresentUpdate(
+                isImmediateDisplayEnabled: true,
+                presentedText: "Hello",
+                translatedText: "",
+                candidateText: "Hello there",
+                presentedAt: presentedAt,
+                now: presentedAt.addingTimeInterval(0.1)
+            )
+        )
+    }
+
+    @Test
+    func stableFloatingCaptionPresentationKeepsDwell() {
+        let presentedAt = Date()
+
+        #expect(
+            !FloatingCaptionPresentationPolicy.canPresentUpdate(
+                isImmediateDisplayEnabled: false,
+                presentedText: "Hello, this subtitle should stay readable.",
+                translatedText: "",
+                candidateText: "A completely revised subtitle arrives quickly.",
+                presentedAt: presentedAt,
+                now: presentedAt.addingTimeInterval(0.5)
+            )
+        )
+    }
+
+    @Test
+    func floatingCaptionTextAlignmentMapsToSwiftUIAlignment() {
+        #expect(FloatingCaptionTextAlignment.leading.textAlignment == .leading)
+        #expect(FloatingCaptionTextAlignment.center.textAlignment == .center)
+    }
+
+    @Test
     func azureRealtimeURLUsesWebSocketSessionEndpoint() {
         let config = OpenAIRealtimeProviderConfig.azure(
             host: "example.openai.azure.com",
