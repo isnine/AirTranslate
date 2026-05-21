@@ -34,7 +34,7 @@ struct OpenAIRealtimeProviderConfigTests {
         let config = OpenAIRealtimeProviderConfig.openAI(apiKey: "test-key")
 
         #expect(
-            config.transcriptionURL(modelID: "gpt-realtime-whisper")?.absoluteString
+            config.transcriptionURL()?.absoluteString
                 == "wss://api.openai.com/v1/realtime?intent=transcription"
         )
         #expect(

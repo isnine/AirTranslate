@@ -348,6 +348,36 @@ enum AppText {
         english: "GPT mode uses OpenAI Realtime directly for the translated stream and bypasses local transcript cleanup.",
         korean: "GPT 모드는 OpenAI Realtime의 번역 스트림을 직접 사용하며 로컬 기록 다듬기를 건너뜁니다."
     )
+    static let advancedSection = localized(
+        english: "Advanced",
+        korean: "고급",
+        japanese: "詳細",
+        chineseSimplified: "高级"
+    )
+    static let customTranscriptionModelName = localized(
+        english: "Transcription model name",
+        korean: "전사 모델 이름",
+        japanese: "文字起こしモデル名",
+        chineseSimplified: "转写模型名称"
+    )
+    static let customTranslationModelName = localized(
+        english: "Translation model name",
+        korean: "번역 모델 이름",
+        japanese: "翻訳モデル名",
+        chineseSimplified: "翻译模型名称"
+    )
+    static let customAzureDeploymentName = localized(
+        english: "Azure transcription deployment",
+        korean: "Azure 전사 배포 이름",
+        japanese: "Azure 文字起こしデプロイ名",
+        chineseSimplified: "Azure 转写部署名称"
+    )
+    static let customModelNameFootnote = localized(
+        english: "Leave empty to use the default.",
+        korean: "기본값을 사용하려면 비워두세요.",
+        japanese: "デフォルトを使う場合は空のままにします。",
+        chineseSimplified: "留空则使用默认值。"
+    )
     static let openAINativeOutput = localized(
         english: "OpenAI native output",
         korean: "OpenAI 본연의 출력",
@@ -434,10 +464,6 @@ enum AppText {
     static let hideFloatingCaptions = localized(english: "Hide Floating Captions", korean: "플로팅 자막 숨기기")
     static let openMainWindow = localized(english: "Open Main Window", korean: "메인 창 열기")
     static let floatingDisplay = localized(english: "Floating Display", korean: "플로팅 표시")
-    static let floatingDisplayDescription = localized(
-        english: "Choose what appears in the detachable floating caption window.",
-        korean: "따로 띄우는 플로팅 자막 창에 표시할 내용을 선택합니다."
-    )
     static let floatingTextAlignment = localized(
         english: "Floating Text Alignment",
         korean: "플로팅 텍스트 정렬",

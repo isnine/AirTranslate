@@ -25,6 +25,9 @@ private enum SettingsKey {
     static let selectedMicrophoneInputDeviceID = "selectedMicrophoneInputDeviceID"
     static let isAppleSourceAutoDetectionEnabled = "isAppleSourceAutoDetectionEnabled"
     static let openAIProvider = "openAIProvider"
+    static let customAzureTranscriptionModelName = "customAzureTranscriptionModelName"
+    static let customAzureTranslationModelName = "customAzureTranslationModelName"
+    static let customAzureTranscriptionDeployment = "customAzureTranscriptionDeployment"
 }
 
 private struct TranslationRequest {
@@ -141,6 +144,15 @@ final class TranslationSessionStore {
             persistSelectedSettings()
             refreshModelAvailability()
         }
+    }
+    var customAzureTranscriptionModelName: String = "" {
+        didSet { persistSelectedSettings() }
+    }
+    var customAzureTranslationModelName: String = "" {
+        didSet { persistSelectedSettings() }
+    }
+    var customAzureTranscriptionDeployment: String = "" {
+        didSet { persistSelectedSettings() }
     }
     var openAITranscriptionModel = OpenAIRealtimeTranscriptionModel.off {
         didSet {
@@ -616,10 +628,30 @@ final class TranslationSessionStore {
                 throw OpenAITranslationError.missingAzureAPIKey
             }
             Self.logger.notice(
-                "resolveOpenAIRealtimeProviderConfig: using Azure provider host=\(host, privacy: .public)"
+                "resolveOpenAIRealtimeProviderConfig: using Azure provider host=\(host, privacy: .private(mask: .hash))"
             )
-            return .azure(host: host, apiKey: key)
+            let deployment = customAzureTranscriptionDeployment
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return .azure(
+                host: host,
+                apiKey: key,
+                transcriptionDeployment: deployment.isEmpty ? nil : deployment
+            )
         }
+    }
+
+    private func resolvedCustomTranscriptionModelName() -> String? {
+        guard openAIProvider == .azure else { return nil }
+        let value = customAzureTranscriptionModelName
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    private func resolvedCustomTranslationModelName() -> String? {
+        guard openAIProvider == .azure else { return nil }
+        let value = customAzureTranslationModelName
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
     }
 
     func openTranscriptsFolder() {
@@ -897,6 +929,7 @@ final class TranslationSessionStore {
             try await openAITranscriber.startRealtimeTranslationOnly(
                 language: targetLanguage,
                 model: openAITranslationModel,
+                modelIDOverride: resolvedCustomTranslationModelName(),
                 providerConfig: providerConfig
             )
         } else if openAITranscriptionModel.isEnabled {
@@ -904,6 +937,7 @@ final class TranslationSessionStore {
             try await openAITranscriber.start(
                 language: sourceLanguage,
                 model: openAITranscriptionModel,
+                modelIDOverride: resolvedCustomTranscriptionModelName(),
                 providerConfig: providerConfig
             )
         } else {
@@ -1121,6 +1155,15 @@ final class TranslationSessionStore {
            let provider = OpenAIProvider(rawValue: providerID) {
             openAIProvider = provider
         }
+        if let value = defaults.string(forKey: SettingsKey.customAzureTranscriptionModelName) {
+            customAzureTranscriptionModelName = value
+        }
+        if let value = defaults.string(forKey: SettingsKey.customAzureTranslationModelName) {
+            customAzureTranslationModelName = value
+        }
+        if let value = defaults.string(forKey: SettingsKey.customAzureTranscriptionDeployment) {
+            customAzureTranscriptionDeployment = value
+        }
         refreshMicrophoneInputDevices()
     }
 
@@ -1150,6 +1193,9 @@ final class TranslationSessionStore {
         defaults.set(selectedMicrophoneInputDeviceID, forKey: SettingsKey.selectedMicrophoneInputDeviceID)
         defaults.set(isAppleSourceAutoDetectionEnabled, forKey: SettingsKey.isAppleSourceAutoDetectionEnabled)
         defaults.set(openAIProvider.rawValue, forKey: SettingsKey.openAIProvider)
+        defaults.set(customAzureTranscriptionModelName, forKey: SettingsKey.customAzureTranscriptionModelName)
+        defaults.set(customAzureTranslationModelName, forKey: SettingsKey.customAzureTranslationModelName)
+        defaults.set(customAzureTranscriptionDeployment, forKey: SettingsKey.customAzureTranscriptionDeployment)
     }
 
     private func stopCapture() async {

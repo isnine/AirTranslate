@@ -12,24 +12,48 @@ struct OpenAIRealtimeProviderConfig: Sendable {
     let kind: Kind
     let host: String
     let apiKey: String
+    /// Azure-only override for the transcription deployment name.
+    /// `nil` falls back to `azureRealtimeTranscriptionSessionDeployment`.
+    let azureTranscriptionDeployment: String?
 
     static let openAIHost = "api.openai.com"
     static let azureRealtimeTranscriptionSessionDeployment = "gpt-realtime-1.5"
 
     static func openAI(apiKey: String) -> OpenAIRealtimeProviderConfig {
-        OpenAIRealtimeProviderConfig(kind: .openAI, host: openAIHost, apiKey: apiKey)
+        OpenAIRealtimeProviderConfig(
+            kind: .openAI,
+            host: openAIHost,
+            apiKey: apiKey,
+            azureTranscriptionDeployment: nil
+        )
     }
 
-    static func azure(host: String, apiKey: String) -> OpenAIRealtimeProviderConfig {
-        OpenAIRealtimeProviderConfig(kind: .azure, host: host, apiKey: apiKey)
+    static func azure(
+        host: String,
+        apiKey: String,
+        transcriptionDeployment: String? = nil
+    ) -> OpenAIRealtimeProviderConfig {
+        OpenAIRealtimeProviderConfig(
+            kind: .azure,
+            host: host,
+            apiKey: apiKey,
+            azureTranscriptionDeployment: transcriptionDeployment
+        )
     }
 
-    func transcriptionURL(modelID: String) -> URL? {
+    func transcriptionURL() -> URL? {
         switch kind {
         case .openAI:
             return URL(string: "wss://\(host)/v1/realtime?intent=transcription")
         case .azure:
-            return URL(string: "wss://\(host)/openai/v1/realtime?model=\(Self.azureRealtimeTranscriptionSessionDeployment)")
+            let trimmed = azureTranscriptionDeployment?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let deployment = trimmed.isEmpty
+                ? Self.azureRealtimeTranscriptionSessionDeployment
+                : trimmed
+            let encoded = deployment
+                .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? deployment
+            return URL(string: "wss://\(host)/openai/v1/realtime?model=\(encoded)")
         }
     }
 
@@ -59,6 +83,10 @@ struct OpenAIRealtimeProviderConfig: Sendable {
         case .azure: "azure"
         }
     }
+}
+
+private extension String {
+    var nonEmpty: String? { isEmpty ? nil : self }
 }
 
 final class OpenAIRealtimeTranscriber: @unchecked Sendable {
@@ -96,11 +124,15 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
     func start(
         language: LanguageOption,
         model: OpenAIRealtimeTranscriptionModel,
+        modelIDOverride: String? = nil,
         providerConfig: OpenAIRealtimeProviderConfig
     ) async throws {
+        let resolvedID = modelIDOverride?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nonEmpty ?? model.rawValue
         try await start(
             language: language,
-            modelID: model.rawValue,
+            modelID: resolvedID,
             outputMode: .transcription,
             isEnabled: model.isEnabled,
             providerConfig: providerConfig
@@ -110,11 +142,15 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
     func startRealtimeTranslationOnly(
         language: LanguageOption,
         model: OpenAIRealtimeTranslationModel,
+        modelIDOverride: String? = nil,
         providerConfig: OpenAIRealtimeProviderConfig
     ) async throws {
+        let resolvedID = modelIDOverride?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .nonEmpty ?? model.apiModelID
         try await start(
             language: language,
-            modelID: model.apiModelID,
+            modelID: resolvedID,
             outputMode: .translationOnly,
             isEnabled: model.usesRealtimeAudioTranslation,
             providerConfig: providerConfig
@@ -149,7 +185,7 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
         let url: URL
         switch outputMode {
         case .transcription:
-            guard let transcriptionURL = providerConfig.transcriptionURL(modelID: modelID) else {
+            guard let transcriptionURL = providerConfig.transcriptionURL() else {
                 Self.logger.error(
                     "OpenAIRealtimeTranscriber.start aborted: provider \(providerConfig.kindLogDescription, privacy: .public) returned no transcription URL"
                 )
@@ -167,7 +203,7 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
         }
 
         Self.logger.notice(
-            "OpenAIRealtimeTranscriber.start mode=\(String(describing: outputMode), privacy: .public) provider=\(providerConfig.kindLogDescription, privacy: .public) host=\(providerConfig.host, privacy: .public) model=\(modelID, privacy: .public) language=\(language.id, privacy: .public) url=\(url.absoluteString, privacy: .public)"
+            "OpenAIRealtimeTranscriber.start mode=\(String(describing: outputMode), privacy: .public) provider=\(providerConfig.kindLogDescription, privacy: .public) host=\(providerConfig.host, privacy: .private(mask: .hash)) model=\(modelID, privacy: .public) language=\(language.id, privacy: .public) url=\(url.absoluteString, privacy: .private(mask: .hash))"
         )
 
         var request = URLRequest(url: url)
@@ -672,7 +708,7 @@ private final class OpenAIRealtimeURLSessionDelegate: NSObject, URLSessionWebSoc
         didOpenWithProtocol protocol: String?
     ) {
         logger.notice(
-            "OpenAIRealtimeTranscriber websocket opened url=\(webSocketTask.currentRequest?.url?.absoluteString ?? "<unknown>", privacy: .public) protocol=\(`protocol` ?? "<none>", privacy: .public)"
+            "OpenAIRealtimeTranscriber websocket opened url=\(webSocketTask.currentRequest?.url?.absoluteString ?? "<unknown>", privacy: .private(mask: .hash)) protocol=\(`protocol` ?? "<none>", privacy: .public)"
         )
     }
 
@@ -696,7 +732,7 @@ private final class OpenAIRealtimeURLSessionDelegate: NSObject, URLSessionWebSoc
         guard let transaction = metrics.transactionMetrics.last else { return }
         let statusCode = (transaction.response as? HTTPURLResponse)?.statusCode ?? -1
         logger.notice(
-            "OpenAIRealtimeTranscriber task metrics url=\(task.currentRequest?.url?.absoluteString ?? "<unknown>", privacy: .public) status=\(statusCode, privacy: .public) networkProtocol=\(transaction.networkProtocolName ?? "<unknown>", privacy: .public) reusedConnection=\(transaction.isReusedConnection, privacy: .public)"
+            "OpenAIRealtimeTranscriber task metrics url=\(task.currentRequest?.url?.absoluteString ?? "<unknown>", privacy: .private(mask: .hash)) status=\(statusCode, privacy: .public) networkProtocol=\(transaction.networkProtocolName ?? "<unknown>", privacy: .public) reusedConnection=\(transaction.isReusedConnection, privacy: .public)"
         )
     }
 
@@ -708,7 +744,7 @@ private final class OpenAIRealtimeURLSessionDelegate: NSObject, URLSessionWebSoc
         guard let error else { return }
         let statusCode = (task.response as? HTTPURLResponse)?.statusCode ?? -1
         logger.error(
-            "OpenAIRealtimeTranscriber task completed with error status=\(statusCode, privacy: .public) url=\(task.currentRequest?.url?.absoluteString ?? "<unknown>", privacy: .public) error=\(error.localizedDescription, privacy: .public) details=\(String(describing: error), privacy: .public)"
+            "OpenAIRealtimeTranscriber task completed with error status=\(statusCode, privacy: .public) url=\(task.currentRequest?.url?.absoluteString ?? "<unknown>", privacy: .private(mask: .hash)) error=\(error.localizedDescription, privacy: .public) details=\(String(describing: error), privacy: .public)"
         )
     }
 }

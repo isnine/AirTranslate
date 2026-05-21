@@ -454,40 +454,9 @@ private struct ConfigurationSheetView: View {
             title: AppText.gptModels
         ) {
             VStack(spacing: 6) {
-                GPTProviderPickerRow(
-                    title: AppText.openAIProvider,
-                    selection: Binding(
-                        get: { session.openAIProvider },
-                        set: { newValue in
-                            session.openAIProvider = newValue
-                            configurationNotice = nil
-                            shouldFocusOpenAIAPIKey = false
-                        }
-                    )
-                )
-
-                GPTModelMenuRow(
-                    title: AppText.gptTranscriptionModel,
-                    systemImage: "waveform.circle.fill",
-                    value: session.openAITranscriptionModel.title
-                ) {
-                    ForEach(OpenAIRealtimeTranscriptionModel.allCases) { model in
-                        Button(model.title) {
-                            session.openAITranscriptionModel = model
-                        }
-                    }
-                }
-
-                GPTModelMenuRow(
-                    title: AppText.gptTranslationModel,
-                    systemImage: "globe",
-                    value: session.openAITranslationModel.title
-                ) {
-                    ForEach(OpenAIRealtimeTranslationModel.allCases) { model in
-                        Button(model.title) {
-                            session.openAITranslationModel = model
-                        }
-                    }
+                OpenAIRealtimeModelPickers(session: session) { _ in
+                    configurationNotice = nil
+                    shouldFocusOpenAIAPIKey = false
                 }
 
                 switch session.openAIProvider {
@@ -539,6 +508,8 @@ private struct ConfigurationSheetView: View {
                         }
                     )
                 }
+
+                OpenAIAdvancedOverridesView(session: session)
 
                 Text(AppText.gptModelsDescription)
                     .font(.caption2)

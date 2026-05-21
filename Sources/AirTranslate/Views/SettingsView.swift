@@ -19,7 +19,7 @@ struct SettingsView: View {
             }
             .padding(16)
         }
-        .frame(width: 460)
+        .frame(minWidth: 460, idealWidth: 520, maxWidth: .infinity)
         .frame(minHeight: 560)
         .background(.regularMaterial)
         .onAppear {
@@ -39,40 +39,9 @@ struct SettingsView: View {
             title: AppText.gptModels
         ) {
             VStack(spacing: 6) {
-                SettingsProviderPickerRow(
-                    title: AppText.openAIProvider,
-                    selection: Binding(
-                        get: { session.openAIProvider },
-                        set: { provider in
-                            session.openAIProvider = provider
-                            configurationNotice = nil
-                            shouldFocusAPIKey = false
-                        }
-                    )
-                )
-
-                SettingsCompactMenuRow(
-                    title: AppText.gptTranscriptionModel,
-                    systemImage: "waveform.circle.fill",
-                    value: session.openAITranscriptionModel.title
-                ) {
-                    ForEach(OpenAIRealtimeTranscriptionModel.allCases) { model in
-                        Button(model.title) {
-                            session.openAITranscriptionModel = model
-                        }
-                    }
-                }
-
-                SettingsCompactMenuRow(
-                    title: AppText.gptTranslationModel,
-                    systemImage: "globe",
-                    value: session.openAITranslationModel.title
-                ) {
-                    ForEach(OpenAIRealtimeTranslationModel.allCases) { model in
-                        Button(model.title) {
-                            session.openAITranslationModel = model
-                        }
-                    }
+                OpenAIRealtimeModelPickers(session: session) { _ in
+                    configurationNotice = nil
+                    shouldFocusAPIKey = false
                 }
 
                 switch session.openAIProvider {
@@ -97,6 +66,8 @@ struct SettingsView: View {
                     )
                 }
 
+                advancedModelOverridesGroup
+
                 Text(AppText.gptModelsDescription)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -106,6 +77,11 @@ struct SettingsView: View {
                 providerAccessLink
             }
         }
+    }
+
+    @ViewBuilder
+    private var advancedModelOverridesGroup: some View {
+        OpenAIAdvancedOverridesView(session: session)
     }
 
     private var transcriptSection: some View {
@@ -184,12 +160,6 @@ struct SettingsView: View {
                     systemImage: "bolt.fill",
                     isOn: $session.isFloatingCaptionImmediateDisplayEnabled
                 )
-
-                Text(AppText.floatingDisplayDescription)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 8)
 
                 Text(AppText.floatingImmediateDisplayDescription)
                     .font(.caption2)

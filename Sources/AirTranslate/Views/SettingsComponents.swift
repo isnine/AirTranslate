@@ -470,6 +470,112 @@ struct SettingsAssetAvailabilityRow: View {
     }
 }
 
+struct SettingsAdvancedDisclosure<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) { isExpanded.toggle() }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+
+                    Text(title)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
+
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                content
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+struct ModelNameOverrideField: View {
+    let title: String
+    let systemImage: String
+    let placeholder: String
+    @Binding var text: String
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 16)
+                .help(title)
+                .accessibilityLabel(title)
+
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.roundedBorder)
+                .font(.caption)
+                .autocorrectionDisabled(true)
+                .frame(minWidth: 0, maxWidth: .infinity)
+        }
+    }
+}
+
+/// Azure-only advanced overrides for the OpenAI Realtime section.
+/// Renders nothing when the active provider is OpenAI.
+struct OpenAIAdvancedOverridesView: View {
+    @Bindable var session: TranslationSessionStore
+
+    var body: some View {
+        if session.openAIProvider == .azure {
+            let transcriptionPlaceholder = session.openAITranscriptionModel.isEnabled
+                ? session.openAITranscriptionModel.rawValue
+                : OpenAIRealtimeTranscriptionModel.gptRealtimeWhisper.rawValue
+            let translationPlaceholder = session.openAITranslationModel.isEnabled
+                ? session.openAITranslationModel.apiModelID
+                : OpenAIRealtimeTranslationModel.gptRealtimeTranslate.apiModelID
+
+            SettingsAdvancedDisclosure(title: AppText.advancedSection) {
+                VStack(alignment: .leading, spacing: 6) {
+                    ModelNameOverrideField(
+                        title: AppText.customTranscriptionModelName,
+                        systemImage: "waveform.circle.fill",
+                        placeholder: transcriptionPlaceholder,
+                        text: $session.customAzureTranscriptionModelName
+                    )
+                    ModelNameOverrideField(
+                        title: AppText.customTranslationModelName,
+                        systemImage: "globe",
+                        placeholder: translationPlaceholder,
+                        text: $session.customAzureTranslationModelName
+                    )
+                    ModelNameOverrideField(
+                        title: AppText.customAzureDeploymentName,
+                        systemImage: "server.rack",
+                        placeholder: OpenAIRealtimeProviderConfig
+                            .azureRealtimeTranscriptionSessionDeployment,
+                        text: $session.customAzureTranscriptionDeployment
+                    )
+
+                    Text(AppText.customModelNameFootnote)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+}
+
 private struct SettingsNoticeText: View {
     let notice: String
 

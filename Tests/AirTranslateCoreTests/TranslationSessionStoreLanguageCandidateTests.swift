@@ -187,7 +187,7 @@ struct TranslationSessionStoreLanguageCandidateTests {
         )
 
         #expect(
-            config.transcriptionURL(modelID: "gpt-realtime-whisper")?.absoluteString
+            config.transcriptionURL()?.absoluteString
                 == "wss://example.openai.azure.com/openai/v1/realtime?model=gpt-realtime-1.5"
         )
         #expect(
