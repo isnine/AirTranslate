@@ -1,15 +1,79 @@
 import AVFoundation
 import CoreMedia
 import Foundation
+import os
+
+struct OpenAIRealtimeProviderConfig: Sendable {
+    enum Kind: Sendable {
+        case openAI
+        case azure
+    }
+
+    let kind: Kind
+    let host: String
+    let apiKey: String
+
+    static let openAIHost = "api.openai.com"
+    static let azureRealtimeTranscriptionSessionDeployment = "gpt-realtime-1.5"
+
+    static func openAI(apiKey: String) -> OpenAIRealtimeProviderConfig {
+        OpenAIRealtimeProviderConfig(kind: .openAI, host: openAIHost, apiKey: apiKey)
+    }
+
+    static func azure(host: String, apiKey: String) -> OpenAIRealtimeProviderConfig {
+        OpenAIRealtimeProviderConfig(kind: .azure, host: host, apiKey: apiKey)
+    }
+
+    func transcriptionURL(modelID: String) -> URL? {
+        switch kind {
+        case .openAI:
+            return URL(string: "wss://\(host)/v1/realtime?intent=transcription")
+        case .azure:
+            return URL(string: "wss://\(host)/openai/v1/realtime?model=\(Self.azureRealtimeTranscriptionSessionDeployment)")
+        }
+    }
+
+    func translationURL(modelID: String) -> URL? {
+        let encodedModel = modelID
+            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? modelID
+        switch kind {
+        case .openAI:
+            return URL(string: "wss://\(host)/v1/realtime/translations?model=\(encodedModel)")
+        case .azure:
+            return URL(string: "wss://\(host)/openai/v1/realtime/translations?model=\(encodedModel)")
+        }
+    }
+
+    func apply(to request: inout URLRequest) {
+        switch kind {
+        case .openAI:
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        case .azure:
+            request.setValue(apiKey, forHTTPHeaderField: "api-key")
+        }
+    }
+
+    var kindLogDescription: String {
+        switch kind {
+        case .openAI: "openAI"
+        case .azure: "azure"
+        }
+    }
+}
 
 final class OpenAIRealtimeTranscriber: @unchecked Sendable {
-    private static let realtimeAudioSampleRate = 24_000
+    static let realtimeAudioSampleRate = 24_000
     private static let maxAudioChunkMilliseconds = 80
     private static let bytesPerPCM16Sample = 2
     private static let maxPCM16AudioChunkByteCount = realtimeAudioSampleRate
         * bytesPerPCM16Sample
         * maxAudioChunkMilliseconds
         / 1_000
+
+    private static let logger = Logger(
+        subsystem: "dev.appcaster.AirTranslate",
+        category: "OpenAIRealtime"
+    )
 
     enum OutputMode {
         case transcription
@@ -20,6 +84,8 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
 
     private let stateLock = NSLock()
     private let conversionLock = NSLock()
+    private let urlSessionDelegate = OpenAIRealtimeURLSessionDelegate()
+    private var urlSession: URLSession?
     private var webSocketTask: URLSessionWebSocketTask?
     private var receiveTask: Task<Void, Never>?
     private var language = LanguageOption.supported[0]
@@ -27,21 +93,31 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
     private var isPaused = false
     private var realtimeTranscriptText = ""
 
-    func start(language: LanguageOption, model: OpenAIRealtimeTranscriptionModel) async throws {
+    func start(
+        language: LanguageOption,
+        model: OpenAIRealtimeTranscriptionModel,
+        providerConfig: OpenAIRealtimeProviderConfig
+    ) async throws {
         try await start(
             language: language,
             modelID: model.rawValue,
             outputMode: .transcription,
-            isEnabled: model.isEnabled
+            isEnabled: model.isEnabled,
+            providerConfig: providerConfig
         )
     }
 
-    func startRealtimeTranslationOnly(language: LanguageOption, model: OpenAIRealtimeTranslationModel) async throws {
+    func startRealtimeTranslationOnly(
+        language: LanguageOption,
+        model: OpenAIRealtimeTranslationModel,
+        providerConfig: OpenAIRealtimeProviderConfig
+    ) async throws {
         try await start(
             language: language,
             modelID: model.apiModelID,
             outputMode: .translationOnly,
-            isEnabled: model.usesRealtimeAudioTranslation
+            isEnabled: model.usesRealtimeAudioTranslation,
+            providerConfig: providerConfig
         )
     }
 
@@ -49,12 +125,21 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
         language: LanguageOption,
         modelID: String,
         outputMode: OutputMode,
-        isEnabled: Bool
+        isEnabled: Bool,
+        providerConfig: OpenAIRealtimeProviderConfig
     ) async throws {
         stop()
 
-        guard isEnabled else { return }
-        guard let apiKey = try OpenAIAPIKeyStore.readAPIKey(), !apiKey.isEmpty else {
+        guard isEnabled else {
+            Self.logger.notice(
+                "OpenAIRealtimeTranscriber.start skipped (disabled). mode=\(String(describing: outputMode), privacy: .public) model=\(modelID, privacy: .public)"
+            )
+            return
+        }
+        guard !providerConfig.apiKey.isEmpty else {
+            Self.logger.error(
+                "OpenAIRealtimeTranscriber.start aborted: missing api key. provider=\(providerConfig.kindLogDescription, privacy: .public)"
+            )
             throw OpenAITranslationError.missingAPIKey
         }
 
@@ -64,19 +149,41 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
         let url: URL
         switch outputMode {
         case .transcription:
-            url = URL(string: "wss://api.openai.com/v1/realtime?intent=transcription")!
+            guard let transcriptionURL = providerConfig.transcriptionURL(modelID: modelID) else {
+                Self.logger.error(
+                    "OpenAIRealtimeTranscriber.start aborted: provider \(providerConfig.kindLogDescription, privacy: .public) returned no transcription URL"
+                )
+                throw OpenAITranslationError.transcriptionEndpointUnsupported
+            }
+            url = transcriptionURL
         case .translationOnly:
-            url = URL(string: "wss://api.openai.com/v1/realtime/translations?model=\(modelID)")!
+            guard let translationURL = providerConfig.translationURL(modelID: modelID) else {
+                Self.logger.error(
+                    "OpenAIRealtimeTranscriber.start aborted: provider \(providerConfig.kindLogDescription, privacy: .public) returned no translation URL for model=\(modelID, privacy: .public)"
+                )
+                throw OpenAITranslationError.invalidResponse
+            }
+            url = translationURL
         }
 
-        var request = URLRequest(url: url)
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        Self.logger.notice(
+            "OpenAIRealtimeTranscriber.start mode=\(String(describing: outputMode), privacy: .public) provider=\(providerConfig.kindLogDescription, privacy: .public) host=\(providerConfig.host, privacy: .public) model=\(modelID, privacy: .public) language=\(language.id, privacy: .public) url=\(url.absoluteString, privacy: .public)"
+        )
 
-        let webSocketTask = URLSession.shared.webSocketTask(with: request)
+        var request = URLRequest(url: url)
+        providerConfig.apply(to: &request)
+
+        let urlSession = URLSession(configuration: .default, delegate: urlSessionDelegate, delegateQueue: nil)
+        self.urlSession = urlSession
+        let webSocketTask = urlSession.webSocketTask(with: request)
         self.webSocketTask = webSocketTask
         webSocketTask.resume()
 
-        try await sendSessionUpdate(language: language, modelID: modelID)
+        try await sendSessionUpdate(
+            language: language,
+            modelID: modelID,
+            providerKind: providerConfig.kind
+        )
         receiveTask = Task { [weak self] in
             await self?.receiveLoop()
         }
@@ -105,6 +212,9 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
 
             webSocketTask.send(.string(text)) { [weak self] error in
                 guard let error, let self else { return }
+                Self.logger.error(
+                    "OpenAIRealtimeTranscriber audio append failed: \(error.localizedDescription, privacy: .public)"
+                )
                 self.delegate?.liveSpeechTranscriber(self.proxyTranscriber, didFail: error)
             }
         }
@@ -117,26 +227,73 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
     }
 
     func stop() {
+        let hadTask = webSocketTask != nil
         setPaused(false)
         receiveTask?.cancel()
         receiveTask = nil
         webSocketTask?.cancel(with: .goingAway, reason: nil)
         webSocketTask = nil
+        urlSession?.invalidateAndCancel()
+        urlSession = nil
         realtimeTranscriptText = ""
+        if hadTask {
+            Self.logger.notice("OpenAIRealtimeTranscriber.stop closed websocket")
+        }
     }
 
-    private func sendSessionUpdate(language: LanguageOption, modelID: String) async throws {
+    private func sendSessionUpdate(
+        language: LanguageOption,
+        modelID: String,
+        providerKind: OpenAIRealtimeProviderConfig.Kind
+    ) async throws {
+        let text = try Self.sessionUpdatePayload(
+            language: language,
+            modelID: modelID,
+            outputMode: outputMode,
+            providerKind: providerKind
+        )
+        Self.logger.debug(
+            "OpenAIRealtimeTranscriber sending session.update mode=\(String(describing: self.outputMode), privacy: .public) bytes=\(text.utf8.count, privacy: .public)"
+        )
+        do {
+            try await send(text)
+            Self.logger.notice("OpenAIRealtimeTranscriber session.update accepted by socket")
+        } catch {
+            Self.logger.error(
+                "OpenAIRealtimeTranscriber session.update failed: \(error.localizedDescription, privacy: .public)"
+            )
+            throw error
+        }
+    }
+
+    static func sessionUpdatePayload(
+        language: LanguageOption,
+        modelID: String,
+        outputMode: OutputMode,
+        providerKind: OpenAIRealtimeProviderConfig.Kind = .openAI
+    ) throws -> String {
         let data: Data
         switch outputMode {
         case .transcription:
+            let sessionType: String
+            let transcriptionModelID: String
+            switch providerKind {
+            case .openAI:
+                sessionType = "transcription"
+                transcriptionModelID = modelID
+            case .azure:
+                sessionType = "realtime"
+                transcriptionModelID = OpenAIRealtimeTranscriptionModel.gptRealtimeWhisper.rawValue
+            }
+
             let event = OpenAIRealtimeTranscriptionSessionUpdateEvent(
                 session: OpenAIRealtimeTranscriptionSession(
-                    type: "transcription",
+                    type: sessionType,
                     audio: OpenAIRealtimeTranscriptionAudio(
                         input: OpenAIRealtimeTranscriptionAudioInput(
                             format: OpenAIRealtimeAudioFormat(type: "audio/pcm", rate: Self.realtimeAudioSampleRate),
                             transcription: OpenAIRealtimeTranscriptionConfig(
-                                model: modelID,
+                                model: transcriptionModelID,
                                 language: language.openAILanguageCode
                             ),
                             turnDetection: .lowLatencyServerVAD,
@@ -147,9 +304,23 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
             )
             data = try JSONEncoder().encode(event)
         case .translationOnly:
+            let input: OpenAIRealtimeTranslationAudioInput?
+            switch providerKind {
+            case .openAI:
+                input = nil
+            case .azure:
+                input = OpenAIRealtimeTranslationAudioInput(
+                    transcription: OpenAIRealtimeTranscriptionConfig(
+                        model: OpenAIRealtimeTranscriptionModel.gptRealtimeWhisper.rawValue
+                    ),
+                    noiseReduction: OpenAIRealtimeNoiseReduction(type: "near_field")
+                )
+            }
+
             let event = OpenAIRealtimeTranslationSessionUpdateEvent(
                 session: OpenAIRealtimeTranslationSession(
                     audio: OpenAIRealtimeTranslationAudio(
+                        input: input,
                         output: OpenAIRealtimeTranslationAudioOutput(
                             language: language.openAILanguageCode
                         )
@@ -158,8 +329,11 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
             )
             data = try JSONEncoder().encode(event)
         }
-        guard let text = String(data: data, encoding: .utf8) else { return }
-        try await send(text)
+
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw OpenAITranslationError.invalidResponse
+        }
+        return text
     }
 
     private func send(_ text: String) async throws {
@@ -184,6 +358,9 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
                 handleEventText(text)
             } catch {
                 guard !Task.isCancelled else { return }
+                Self.logger.error(
+                    "OpenAIRealtimeTranscriber receive loop failed: \(error.localizedDescription, privacy: .public)"
+                )
                 delegate?.liveSpeechTranscriber(proxyTranscriber, didFail: error)
                 return
             }
@@ -193,7 +370,23 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
     private func handleEventText(_ text: String) {
         guard let data = text.data(using: .utf8),
               let event = try? JSONDecoder().decode(OpenAIRealtimeTranscriptionEvent.self, from: data)
-        else { return }
+        else {
+            Self.logger.debug(
+                "OpenAIRealtimeTranscriber received undecodable event (bytes=\(text.utf8.count, privacy: .public))"
+            )
+            return
+        }
+
+        switch event.type {
+        case "session.created", "session.updated":
+            Self.logger.notice("OpenAIRealtimeTranscriber event \(event.type, privacy: .public)")
+        case "error":
+            Self.logger.error(
+                "OpenAIRealtimeTranscriber server error: \(event.error?.message ?? "<no message>", privacy: .public) raw=\(text, privacy: .public)"
+            )
+        default:
+            Self.logger.debug("OpenAIRealtimeTranscriber event \(event.type, privacy: .public)")
+        }
 
         switch event.type {
         case "conversation.item.input_audio_transcription.delta":
@@ -212,7 +405,7 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
             guard outputMode == .translationOnly,
                   let transcript = event.transcript,
                   !transcript.isEmpty else { return }
-            publish(text: transcript)
+            publishTranslation(text: transcript, isFinal: true)
             realtimeTranscriptText = ""
         case "session.output_audio.delta":
             guard outputMode == .translationOnly,
@@ -245,13 +438,18 @@ final class OpenAIRealtimeTranscriber: @unchecked Sendable {
                 confidence: 0.5
             )
         case .translationOnly:
-            delegate?.liveSpeechTranscriber(
-                proxyTranscriber,
-                didTranslate: text,
-                language: language,
-                confidence: 0.5
-            )
+            publishTranslation(text: text, isFinal: false)
         }
+    }
+
+    private func publishTranslation(text: String, isFinal: Bool) {
+        delegate?.liveSpeechTranscriber(
+            proxyTranscriber,
+            didTranslate: text,
+            language: language,
+            confidence: 0.5,
+            isFinal: isFinal
+        )
     }
 
     private var proxyTranscriber: LiveSpeechTranscriber {
@@ -381,7 +579,18 @@ private struct OpenAIRealtimeTranslationSession: Encodable {
 }
 
 private struct OpenAIRealtimeTranslationAudio: Encodable {
+    let input: OpenAIRealtimeTranslationAudioInput?
     let output: OpenAIRealtimeTranslationAudioOutput
+}
+
+private struct OpenAIRealtimeTranslationAudioInput: Encodable {
+    let transcription: OpenAIRealtimeTranscriptionConfig
+    let noiseReduction: OpenAIRealtimeNoiseReduction
+
+    private enum CodingKeys: String, CodingKey {
+        case transcription
+        case noiseReduction = "noise_reduction"
+    }
 }
 
 private struct OpenAIRealtimeTranslationAudioOutput: Encodable {
@@ -390,7 +599,12 @@ private struct OpenAIRealtimeTranslationAudioOutput: Encodable {
 
 private struct OpenAIRealtimeTranscriptionConfig: Encodable {
     let model: String
-    let language: String
+    let language: String?
+
+    init(model: String, language: String? = nil) {
+        self.model = model
+        self.language = language
+    }
 }
 
 private struct OpenAIRealtimeTurnDetection: Encodable {
@@ -401,7 +615,7 @@ private struct OpenAIRealtimeTurnDetection: Encodable {
 
     static let lowLatencyServerVAD = OpenAIRealtimeTurnDetection(
         type: "server_vad",
-        threshold: 0.42,
+        threshold: 0.5,
         prefixPaddingMilliseconds: 120,
         silenceDurationMilliseconds: 220
     )
@@ -444,6 +658,59 @@ private struct OpenAIRealtimeTranscriptionEvent: Decodable {
 
 private struct OpenAIRealtimeErrorBody: Decodable {
     let message: String?
+}
+
+private final class OpenAIRealtimeURLSessionDelegate: NSObject, URLSessionWebSocketDelegate, URLSessionTaskDelegate, @unchecked Sendable {
+    private let logger = Logger(
+        subsystem: "dev.appcaster.AirTranslate",
+        category: "OpenAIRealtime"
+    )
+
+    func urlSession(
+        _ session: URLSession,
+        webSocketTask: URLSessionWebSocketTask,
+        didOpenWithProtocol protocol: String?
+    ) {
+        logger.notice(
+            "OpenAIRealtimeTranscriber websocket opened url=\(webSocketTask.currentRequest?.url?.absoluteString ?? "<unknown>", privacy: .public) protocol=\(`protocol` ?? "<none>", privacy: .public)"
+        )
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        webSocketTask: URLSessionWebSocketTask,
+        didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
+        reason: Data?
+    ) {
+        let reasonText = reason.flatMap { String(data: $0, encoding: .utf8) } ?? "<none>"
+        logger.notice(
+            "OpenAIRealtimeTranscriber websocket closed code=\(closeCode.rawValue, privacy: .public) reason=\(reasonText, privacy: .public)"
+        )
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didFinishCollecting metrics: URLSessionTaskMetrics
+    ) {
+        guard let transaction = metrics.transactionMetrics.last else { return }
+        let statusCode = (transaction.response as? HTTPURLResponse)?.statusCode ?? -1
+        logger.notice(
+            "OpenAIRealtimeTranscriber task metrics url=\(task.currentRequest?.url?.absoluteString ?? "<unknown>", privacy: .public) status=\(statusCode, privacy: .public) networkProtocol=\(transaction.networkProtocolName ?? "<unknown>", privacy: .public) reusedConnection=\(transaction.isReusedConnection, privacy: .public)"
+        )
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didCompleteWithError error: Error?
+    ) {
+        guard let error else { return }
+        let statusCode = (task.response as? HTTPURLResponse)?.statusCode ?? -1
+        logger.error(
+            "OpenAIRealtimeTranscriber task completed with error status=\(statusCode, privacy: .public) url=\(task.currentRequest?.url?.absoluteString ?? "<unknown>", privacy: .public) error=\(error.localizedDescription, privacy: .public) details=\(String(describing: error), privacy: .public)"
+        )
+    }
 }
 
 private enum OpenAIRealtimeTranscriberError: LocalizedError {

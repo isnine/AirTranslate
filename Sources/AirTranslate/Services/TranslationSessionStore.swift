@@ -3,6 +3,7 @@ import AppKit
 import AirTranslateCore
 import Foundation
 import Observation
+import os
 
 private enum SettingsKey {
     static let sourceLanguageID = "sourceLanguageID"
@@ -21,6 +22,7 @@ private enum SettingsKey {
     static let audioInputSource = "audioInputSource"
     static let selectedMicrophoneInputDeviceID = "selectedMicrophoneInputDeviceID"
     static let isAppleSourceAutoDetectionEnabled = "isAppleSourceAutoDetectionEnabled"
+    static let openAIProvider = "openAIProvider"
 }
 
 private struct TranslationRequest {
@@ -86,6 +88,10 @@ final class TranslationSessionStore {
     private static let appleAutoDetectionMinimumConfidence = 0.35
     private static let appleAutoDetectionLanguageSwitchMinimumConfidence = 0.72
     private static let isAppleSourceAutoDetectionTemporarilyDisabled = true
+    private static let logger = Logger(
+        subsystem: "dev.appcaster.AirTranslate",
+        category: "Session"
+    )
 
     var isRunning = false
     var isPaused = false
@@ -130,6 +136,14 @@ final class TranslationSessionStore {
         }
     }
     var hasOpenAIAPIKey = OpenAIAPIKeyStore.hasAPIKey()
+    var hasAzureOpenAIConfig = AzureOpenAIConfigStore.hasConfig()
+    var azureOpenAIEndpoint: String = AzureOpenAIConfigStore.readEndpoint() ?? ""
+    var openAIProvider: OpenAIProvider = .openAI {
+        didSet {
+            persistSelectedSettings()
+            refreshModelAvailability()
+        }
+    }
     var openAITranscriptionModel = OpenAIRealtimeTranscriptionModel.off {
         didSet {
             if openAITranscriptionModel.isEnabled {
@@ -248,6 +262,7 @@ final class TranslationSessionStore {
     private var translatedSegmentsBySource: [String: String] = [:]
     private var translationCacheKeyOrder: [String] = []
     private var realtimeTranslationOnlyText = ""
+    private var realtimeTranslationOnlyCommittedText = ""
     private var activeAutosaveSourceText = ""
     private var activeAutosaveTranslatedText = ""
     private var isRestoringSelectedSettings = false
@@ -308,6 +323,7 @@ final class TranslationSessionStore {
 
         let now = Date()
         hasOpenAIAPIKey = false
+        hasAzureOpenAIConfig = false
         lines = [
             CaptionLine(
                 sourceText: "The speaker is explaining how the product roadmap changes when customers need live translation during meetings.",
@@ -385,6 +401,9 @@ final class TranslationSessionStore {
                 warmTranslationSession()
             } catch {
                 guard !Task.isCancelled else { return }
+                Self.logger.error(
+                    "session start failed: \(error.localizedDescription, privacy: .public) details=\(String(describing: error), privacy: .public)"
+                )
                 isRunning = false
                 stopCaptioners()
                 await stopCapture()
@@ -528,6 +547,63 @@ final class TranslationSessionStore {
             refreshModelAvailability()
         } catch {
             statusMessage = error.localizedDescription
+        }
+    }
+
+    func saveAzureOpenAIConfig(endpoint: String, apiKey: String) {
+        do {
+            try AzureOpenAIConfigStore.saveConfig(endpoint: endpoint, apiKey: apiKey)
+            hasAzureOpenAIConfig = true
+            azureOpenAIEndpoint = AzureOpenAIConfigStore.readEndpoint() ?? ""
+            statusMessage = AppText.azureOpenAIConfigSaved
+            refreshModelAvailability()
+        } catch {
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    func removeAzureOpenAIConfig() {
+        do {
+            try AzureOpenAIConfigStore.deleteConfig()
+            hasAzureOpenAIConfig = false
+            azureOpenAIEndpoint = ""
+            statusMessage = AppText.azureOpenAIConfigRemoved
+            refreshModelAvailability()
+        } catch {
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    var hasOpenAIRealtimeCredentials: Bool {
+        switch openAIProvider {
+        case .openAI: hasOpenAIAPIKey
+        case .azure: hasAzureOpenAIConfig
+        }
+    }
+
+    private func resolveOpenAIRealtimeProviderConfig() throws -> OpenAIRealtimeProviderConfig {
+        switch openAIProvider {
+        case .openAI:
+            guard let key = try OpenAIAPIKeyStore.readAPIKey(), !key.isEmpty else {
+                Self.logger.error("resolveOpenAIRealtimeProviderConfig: missing OpenAI API key")
+                throw OpenAITranslationError.missingAPIKey
+            }
+            Self.logger.notice("resolveOpenAIRealtimeProviderConfig: using OpenAI provider")
+            return .openAI(apiKey: key)
+        case .azure:
+            guard let endpoint = AzureOpenAIConfigStore.readEndpoint(),
+                  let host = AzureOpenAIEndpoint.host(from: endpoint) else {
+                Self.logger.error("resolveOpenAIRealtimeProviderConfig: missing Azure endpoint")
+                throw OpenAITranslationError.missingAzureEndpoint
+            }
+            guard let key = try AzureOpenAIConfigStore.readAPIKey(), !key.isEmpty else {
+                Self.logger.error("resolveOpenAIRealtimeProviderConfig: missing Azure API key")
+                throw OpenAITranslationError.missingAzureAPIKey
+            }
+            Self.logger.notice(
+                "resolveOpenAIRealtimeProviderConfig: using Azure provider host=\(host, privacy: .public)"
+            )
+            return .azure(host: host, apiKey: key)
         }
     }
 
@@ -797,14 +873,26 @@ final class TranslationSessionStore {
         openAITranscriber = OpenAIRealtimeTranscriber()
         openAITranscriber.delegate = self
 
+        Self.logger.notice(
+            "startCaptioners provider=\(self.openAIProvider.rawValue, privacy: .public) transcriptionModel=\(self.openAITranscriptionModel.rawValue, privacy: .public) translationModel=\(self.openAITranslationModel.rawValue, privacy: .public) source=\(self.sourceLanguage.id, privacy: .public) target=\(self.targetLanguage.id, privacy: .public)"
+        )
+
         if openAITranslationModel.usesRealtimeAudioTranslation {
+            let providerConfig = try resolveOpenAIRealtimeProviderConfig()
             try await openAITranscriber.startRealtimeTranslationOnly(
                 language: targetLanguage,
-                model: openAITranslationModel
+                model: openAITranslationModel,
+                providerConfig: providerConfig
             )
         } else if openAITranscriptionModel.isEnabled {
-            try await openAITranscriber.start(language: sourceLanguage, model: openAITranscriptionModel)
+            let providerConfig = try resolveOpenAIRealtimeProviderConfig()
+            try await openAITranscriber.start(
+                language: sourceLanguage,
+                model: openAITranscriptionModel,
+                providerConfig: providerConfig
+            )
         } else {
+            Self.logger.notice("startCaptioners using Apple SpeechTranscriber path")
             try await transcriber.start(languages: await appleSpeechLanguagesForCurrentMode())
         }
     }
@@ -878,6 +966,7 @@ final class TranslationSessionStore {
         translationBurstStartedAt = Date.distantPast
         resetTranslationCache()
         realtimeTranslationOnlyText = ""
+        realtimeTranslationOnlyCommittedText = ""
         activeAutosaveSourceText = ""
         activeAutosaveTranslatedText = ""
         stopSpeaking()
@@ -1004,6 +1093,10 @@ final class TranslationSessionStore {
         }
         isAppleSourceAutoDetectionEnabled = isAppleSourceAutoDetectionAvailable
             && defaults.bool(forKey: SettingsKey.isAppleSourceAutoDetectionEnabled)
+        if let providerID = defaults.string(forKey: SettingsKey.openAIProvider),
+           let provider = OpenAIProvider(rawValue: providerID) {
+            openAIProvider = provider
+        }
         refreshMicrophoneInputDevices()
     }
 
@@ -1027,6 +1120,7 @@ final class TranslationSessionStore {
         defaults.set(audioInputSource.id, forKey: SettingsKey.audioInputSource)
         defaults.set(selectedMicrophoneInputDeviceID, forKey: SettingsKey.selectedMicrophoneInputDeviceID)
         defaults.set(isAppleSourceAutoDetectionEnabled, forKey: SettingsKey.isAppleSourceAutoDetectionEnabled)
+        defaults.set(openAIProvider.rawValue, forKey: SettingsKey.openAIProvider)
     }
 
     private func stopCapture() async {
@@ -2374,19 +2468,21 @@ final class TranslationSessionStore {
         translationCacheKeyOrder.removeAll()
     }
 
-    private func appendRealtimeTranslationOnly(_ text: String) {
+    private func appendRealtimeTranslationOnly(_ text: String, isFinal: Bool) {
         guard isRunning, !isPaused else { return }
 
         guard text.rangeOfCharacter(from: .whitespacesAndNewlines.inverted) != nil
             || !realtimeTranslationOnlyText.isEmpty else { return }
 
-        if text.hasPrefix(realtimeTranslationOnlyText) {
+        if isFinal {
+            commitRealtimeTranslationOnlyText(text)
+        } else if text.hasPrefix(realtimeTranslationOnlyText) {
             realtimeTranslationOnlyText = text
         } else if !realtimeTranslationOnlyText.hasSuffix(text) {
             realtimeTranslationOnlyText += text
         }
 
-        let translatedText = realtimeTranslationOnlyText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let translatedText = visibleRealtimeTranslationOnlyText().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !translatedText.isEmpty else { return }
 
         lastRecognizedText = translatedText
@@ -2404,7 +2500,7 @@ final class TranslationSessionStore {
                 translatedText: translatedText,
                 translatedSourceText: sourceText,
                 createdAt: existingLine.createdAt,
-                isFinal: false,
+                isFinal: isFinal,
                 revision: existingLine.revision + 1,
                 usesLongSessionDisplay: usesLongSessionMode
             )
@@ -2414,7 +2510,7 @@ final class TranslationSessionStore {
                 translatedText: translatedText,
                 translatedSourceText: sourceText,
                 createdAt: Date(),
-                isFinal: false,
+                isFinal: isFinal,
                 revision: 1,
                 usesLongSessionDisplay: usesLongSessionMode
             )
@@ -2428,6 +2524,44 @@ final class TranslationSessionStore {
             : translatedText
         updateFloatingTranslationPresentation(floatingTranslatedText, sourceText: sourceText)
         speakTranslatedDeltaIfNeeded(translatedText)
+    }
+
+    private func commitRealtimeTranslationOnlyText(_ text: String) {
+        let finalText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        realtimeTranslationOnlyText = ""
+        guard !finalText.isEmpty else { return }
+
+        let committedText = realtimeTranslationOnlyCommittedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !committedText.isEmpty else {
+            realtimeTranslationOnlyCommittedText = finalText
+            return
+        }
+
+        let normalizedCommitted = normalizedTranscriptForComparison(committedText)
+        let normalizedFinal = normalizedTranscriptForComparison(finalText)
+        if isWholeTextPrefix(normalizedCommitted, of: normalizedFinal) {
+            realtimeTranslationOnlyCommittedText = finalText
+            return
+        }
+        guard !normalizedCommitted.hasSuffix(normalizedFinal) else { return }
+
+        realtimeTranslationOnlyCommittedText = committedText + "\n" + finalText
+    }
+
+    private func visibleRealtimeTranslationOnlyText() -> String {
+        let committedText = realtimeTranslationOnlyCommittedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let partialText = realtimeTranslationOnlyText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !committedText.isEmpty else { return partialText }
+        guard !partialText.isEmpty else { return committedText }
+
+        let normalizedCommitted = normalizedTranscriptForComparison(committedText)
+        let normalizedPartial = normalizedTranscriptForComparison(partialText)
+        if isWholeTextPrefix(normalizedCommitted, of: normalizedPartial) {
+            return partialText
+        }
+
+        return committedText + "\n" + partialText
     }
 
     private func requestTranslation(for line: CaptionLine, source: LanguageOption, target: LanguageOption) {
@@ -2943,7 +3077,19 @@ extension TranslationSessionStore: LiveSpeechTranscriberDelegate {
         confidence: Double
     ) {
         Task { @MainActor in
-            appendRealtimeTranslationOnly(text)
+            appendRealtimeTranslationOnly(text, isFinal: false)
+        }
+    }
+
+    nonisolated func liveSpeechTranscriber(
+        _ transcriber: LiveSpeechTranscriber,
+        didTranslate text: String,
+        language: LanguageOption,
+        confidence: Double,
+        isFinal: Bool
+    ) {
+        Task { @MainActor in
+            appendRealtimeTranslationOnly(text, isFinal: isFinal)
         }
     }
 

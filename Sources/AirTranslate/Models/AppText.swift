@@ -210,6 +210,122 @@ enum AppText {
         english: "The stored OpenAI API key could not be read.",
         korean: "저장된 OpenAI API 키를 읽을 수 없습니다."
     )
+    static let openAIProvider = localized(
+        english: "Provider",
+        korean: "공급자",
+        japanese: "プロバイダー",
+        chineseSimplified: "服务商"
+    )
+    static let openAIProviderOpenAITitle = "OpenAI"
+    static let openAIProviderAzureTitle = "Azure OpenAI"
+    static let azureOpenAIEndpoint = localized(
+        english: "Azure Resource Endpoint",
+        korean: "Azure 리소스 엔드포인트",
+        japanese: "Azureリソースエンドポイント",
+        chineseSimplified: "Azure 资源终结点"
+    )
+    static let azureOpenAIEndpointPlaceholder = localized(
+        english: "https://<resource>.cognitiveservices.azure.com/",
+        korean: "https://<리소스>.cognitiveservices.azure.com/",
+        japanese: "https://<リソース>.cognitiveservices.azure.com/",
+        chineseSimplified: "https://<资源名>.cognitiveservices.azure.com/"
+    )
+    static let azureOpenAIEndpointFormatHint = localized(
+        english: "Use the Azure resource endpoint only. Do not include wss:// or /openai/v1/realtime.",
+        korean: "Azure 리소스 엔드포인트만 입력하세요. wss:// 또는 /openai/v1/realtime은 포함하지 마세요.",
+        japanese: "Azureリソースエンドポイントのみ入力してください。wss:// や /openai/v1/realtime は含めないでください。",
+        chineseSimplified: "只填写 Azure 资源终结点。不要包含 wss:// 或 /openai/v1/realtime。"
+    )
+    static let azureOpenAIAPIKey = localized(
+        english: "Azure API Key",
+        korean: "Azure API 키",
+        japanese: "Azure APIキー",
+        chineseSimplified: "Azure API key"
+    )
+    static let azureOpenAIAPIKeyPlaceholder = localized(
+        english: "Paste Azure resource key",
+        korean: "Azure 리소스 키 붙여넣기",
+        japanese: "Azureリソースキーを貼り付け",
+        chineseSimplified: "粘贴 Azure 资源 key"
+    )
+    static let saveAzureOpenAIConfig = localized(
+        english: "Save Azure Config",
+        korean: "Azure 설정 저장",
+        japanese: "Azure設定を保存",
+        chineseSimplified: "保存 Azure 配置"
+    )
+    static let removeAzureOpenAIConfig = localized(
+        english: "Remove Azure Config",
+        korean: "Azure 설정 삭제",
+        japanese: "Azure設定を削除",
+        chineseSimplified: "删除 Azure 配置"
+    )
+    static let azureOpenAIConfigSaved = localized(
+        english: "Azure OpenAI configuration saved.",
+        korean: "Azure OpenAI 설정이 저장되었습니다.",
+        japanese: "Azure OpenAI設定を保存しました。",
+        chineseSimplified: "已保存 Azure OpenAI 配置。"
+    )
+    static let azureOpenAIConfigRemoved = localized(
+        english: "Azure OpenAI configuration removed.",
+        korean: "Azure OpenAI 설정이 삭제되었습니다.",
+        japanese: "Azure OpenAI設定を削除しました。",
+        chineseSimplified: "已删除 Azure OpenAI 配置。"
+    )
+    static let azureOpenAIConfigConfigured = localized(
+        english: "Azure config saved",
+        korean: "Azure 설정 저장됨",
+        japanese: "Azure設定保存済み",
+        chineseSimplified: "Azure 配置已保存"
+    )
+    static let azureOpenAIConfigNotConfigured = localized(
+        english: "Azure config required",
+        korean: "Azure 설정 필요",
+        japanese: "Azure設定が必要",
+        chineseSimplified: "需要 Azure 配置"
+    )
+    static let azureOpenAIConfigRequiredForGPTMode = localized(
+        english: "Enter the Azure endpoint and key to use GPT mode.",
+        korean: "GPT 모드를 사용하려면 Azure 엔드포인트와 키를 입력하세요.",
+        japanese: "GPTモードを使うにはAzureエンドポイントとキーを入力してください。",
+        chineseSimplified: "要使用 GPT 模式，请输入 Azure 终结点和密钥。"
+    )
+    static let azureOpenAIEndpointInvalid = localized(
+        english: "The Azure resource endpoint must be a URL such as https://<resource>.cognitiveservices.azure.com/.",
+        korean: "Azure 리소스 엔드포인트는 https://<리소스>.cognitiveservices.azure.com/ 같은 URL이어야 합니다.",
+        japanese: "Azureリソースエンドポイントは https://<リソース>.cognitiveservices.azure.com/ の形式のURLを入力してください。",
+        chineseSimplified: "Azure 资源终结点必须是类似 https://<资源名>.cognitiveservices.azure.com/ 的 URL。"
+    )
+    static let azureOpenAIEndpointMissing = localized(
+        english: "Add an Azure resource endpoint in Settings before using Azure OpenAI.",
+        korean: "Azure OpenAI를 사용하기 전에 설정에서 Azure 리소스 엔드포인트를 입력하세요.",
+        japanese: "Azure OpenAIを使う前に設定でAzureリソースエンドポイントを入力してください。",
+        chineseSimplified: "使用 Azure OpenAI 前请先在设置中输入 Azure 资源终结点。"
+    )
+    static let azureOpenAIAPIKeyMissing = localized(
+        english: "Add an Azure OpenAI API key in Settings before using Azure OpenAI.",
+        korean: "Azure OpenAI를 사용하기 전에 설정에서 Azure OpenAI API 키를 입력하세요.",
+        japanese: "Azure OpenAIを使う前に設定でAzure OpenAI APIキーを入力してください。",
+        chineseSimplified: "使用 Azure OpenAI 前请先在设置中输入 Azure OpenAI API key。"
+    )
+    static let azureOpenAITranscriptionUnsupported = localized(
+        english: "Azure OpenAI only supports realtime translation. Switch to a translation model or use the OpenAI provider for transcription.",
+        korean: "Azure OpenAI는 실시간 번역만 지원합니다. 번역 모델로 전환하거나 전사를 위해 OpenAI 공급자를 사용하세요.",
+        japanese: "Azure OpenAIはリアルタイム翻訳のみサポートします。翻訳モデルに切り替えるか、文字起こしにはOpenAIプロバイダーを使ってください。",
+        chineseSimplified: "Azure OpenAI 仅支持实时翻译。请切换到翻译模型，或转写时改用 OpenAI 服务商。"
+    )
+    static let azureOpenAIPlatformPrompt = localized(
+        english: "Need Azure OpenAI access?",
+        korean: "Azure OpenAI 액세스가 필요하신가요?",
+        japanese: "Azure OpenAIのアクセスが必要ですか？",
+        chineseSimplified: "需要 Azure OpenAI 访问权限？"
+    )
+    static let azureOpenAIPlatformLink = localized(
+        english: "Open Azure AI Foundry",
+        korean: "Azure AI Foundry 열기",
+        japanese: "Azure AI Foundryを開く",
+        chineseSimplified: "打开 Azure AI Foundry"
+    )
     static let appleProcessingMode = localized(english: "Apple Mode", korean: "Apple 기본 모드", japanese: "Apple標準モード", chineseSimplified: "Apple 默认模式")
     static let appleProcessingModeDescription = localized(
         english: "The default local workflow. Keep this as the base, then add OpenAI Realtime below only when needed.",

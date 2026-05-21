@@ -203,10 +203,16 @@ struct SidebarView: View {
         )
     }
 
+    private var gptCredentialsRequiredNotice: String {
+        session.openAIProvider == .azure
+            ? AppText.azureOpenAIConfigRequiredForGPTMode
+            : AppText.openAIAPIKeyRequiredForGPTMode
+    }
+
     private var openConfigurationButton: some View {
         Button {
-            if ProcessingEngine.current(for: session) == .gpt && !session.hasOpenAIAPIKey {
-                configurationNotice = AppText.openAIAPIKeyRequiredForGPTMode
+            if ProcessingEngine.current(for: session) == .gpt && !session.hasOpenAIRealtimeCredentials {
+                configurationNotice = gptCredentialsRequiredNotice
                 shouldFocusOpenAIAPIKey = true
             }
             isConfigurationPresented = true
@@ -237,8 +243,8 @@ struct SidebarView: View {
                     session.useAppleDefaultMode()
                 case .gpt:
                     session.useGPTRealtimeMode()
-                    if !session.hasOpenAIAPIKey {
-                        configurationNotice = AppText.openAIAPIKeyRequiredForGPTMode
+                    if !session.hasOpenAIRealtimeCredentials {
+                        configurationNotice = gptCredentialsRequiredNotice
                         shouldFocusOpenAIAPIKey = true
                         isConfigurationPresented = true
                     }
@@ -339,6 +345,9 @@ private struct ConfigurationSheetView: View {
     @Binding var shouldFocusOpenAIAPIKey: Bool
     let dismiss: () -> Void
 
+    @State private var azureEndpoint: String = ""
+    @State private var azureAPIKey: String = ""
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .center, spacing: 12) {
@@ -407,6 +416,7 @@ private struct ConfigurationSheetView: View {
         .frame(minHeight: 560)
         .onAppear {
             session.refreshModelAvailability()
+            azureEndpoint = session.azureOpenAIEndpoint
         }
     }
 
@@ -444,6 +454,18 @@ private struct ConfigurationSheetView: View {
             title: AppText.gptModels
         ) {
             VStack(spacing: 6) {
+                GPTProviderPickerRow(
+                    title: AppText.openAIProvider,
+                    selection: Binding(
+                        get: { session.openAIProvider },
+                        set: { newValue in
+                            session.openAIProvider = newValue
+                            configurationNotice = nil
+                            shouldFocusOpenAIAPIKey = false
+                        }
+                    )
+                )
+
                 GPTModelMenuRow(
                     title: AppText.gptTranscriptionModel,
                     systemImage: "waveform.circle.fill",
@@ -468,26 +490,55 @@ private struct ConfigurationSheetView: View {
                     }
                 }
 
-                GPTAPIKeyRow(
-                    apiKey: $openAIAPIKey,
-                    shouldFocusAPIKey: $shouldFocusOpenAIAPIKey,
-                    hasAPIKey: session.hasOpenAIAPIKey,
-                    notice: configurationNotice,
-                    save: {
-                        session.saveOpenAIAPIKey(openAIAPIKey)
-                        openAIAPIKey = ""
-                        configurationNotice = nil
-                        shouldFocusOpenAIAPIKey = false
-                    },
-                    remove: {
-                        session.removeOpenAIAPIKey()
-                        openAIAPIKey = ""
-                        if ProcessingEngine.current(for: session) == .gpt {
-                            configurationNotice = AppText.openAIAPIKeyRequiredForGPTMode
-                            shouldFocusOpenAIAPIKey = true
+                switch session.openAIProvider {
+                case .openAI:
+                    GPTAPIKeyRow(
+                        apiKey: $openAIAPIKey,
+                        shouldFocusAPIKey: $shouldFocusOpenAIAPIKey,
+                        hasAPIKey: session.hasOpenAIAPIKey,
+                        notice: configurationNotice,
+                        save: {
+                            session.saveOpenAIAPIKey(openAIAPIKey)
+                            openAIAPIKey = ""
+                            configurationNotice = nil
+                            shouldFocusOpenAIAPIKey = false
+                        },
+                        remove: {
+                            session.removeOpenAIAPIKey()
+                            openAIAPIKey = ""
+                            if ProcessingEngine.current(for: session) == .gpt {
+                                configurationNotice = AppText.openAIAPIKeyRequiredForGPTMode
+                                shouldFocusOpenAIAPIKey = true
+                            }
                         }
-                    }
-                )
+                    )
+                case .azure:
+                    GPTAzureConfigRow(
+                        endpoint: $azureEndpoint,
+                        apiKey: $azureAPIKey,
+                        shouldFocusAPIKey: $shouldFocusOpenAIAPIKey,
+                        hasConfig: session.hasAzureOpenAIConfig,
+                        notice: configurationNotice,
+                        save: {
+                            session.saveAzureOpenAIConfig(endpoint: azureEndpoint, apiKey: azureAPIKey)
+                            azureAPIKey = ""
+                            if session.hasAzureOpenAIConfig {
+                                azureEndpoint = session.azureOpenAIEndpoint
+                                configurationNotice = nil
+                                shouldFocusOpenAIAPIKey = false
+                            }
+                        },
+                        remove: {
+                            session.removeAzureOpenAIConfig()
+                            azureAPIKey = ""
+                            azureEndpoint = ""
+                            if ProcessingEngine.current(for: session) == .gpt {
+                                configurationNotice = AppText.azureOpenAIConfigRequiredForGPTMode
+                                shouldFocusOpenAIAPIKey = true
+                            }
+                        }
+                    )
+                }
 
                 Text(AppText.gptModelsDescription)
                     .font(.caption2)
@@ -496,15 +547,28 @@ private struct ConfigurationSheetView: View {
                     .padding(.horizontal, 8)
 
                 HStack(spacing: 5) {
-                    Text(AppText.openAIAPIKeyPlatformPrompt)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                    switch session.openAIProvider {
+                    case .openAI:
+                        Text(AppText.openAIAPIKeyPlatformPrompt)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
 
-                    Link(
-                        AppText.openAIAPIKeyPlatformLink,
-                        destination: URL(string: "https://platform.openai.com/api-keys")!
-                    )
-                    .font(.caption2.weight(.semibold))
+                        Link(
+                            AppText.openAIAPIKeyPlatformLink,
+                            destination: URL(string: "https://platform.openai.com/api-keys")!
+                        )
+                        .font(.caption2.weight(.semibold))
+                    case .azure:
+                        Text(AppText.azureOpenAIPlatformPrompt)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+
+                        Link(
+                            AppText.azureOpenAIPlatformLink,
+                            destination: URL(string: "https://ai.azure.com/")!
+                        )
+                        .font(.caption2.weight(.semibold))
+                    }
                 }
                 .padding(.horizontal, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -991,6 +1055,149 @@ private struct GPTAPIKeyRow: View {
             Text(hasAPIKey ? AppText.openAIAPIKeyConfigured : AppText.openAIAPIKeyNotConfigured)
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(hasAPIKey ? Color.green : Color.secondary)
+                .padding(.leading, 24)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .onAppear {
+            focusAPIKeyIfNeeded()
+        }
+        .onChange(of: shouldFocusAPIKey) { _, _ in
+            focusAPIKeyIfNeeded()
+        }
+    }
+
+    private func focusAPIKeyIfNeeded() {
+        guard shouldFocusAPIKey else { return }
+        Task { @MainActor in
+            isAPIKeyFocused = true
+            shouldFocusAPIKey = false
+        }
+    }
+}
+
+private struct GPTProviderPickerRow: View {
+    let title: String
+    @Binding var selection: OpenAIProvider
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "cloud.fill")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 16)
+
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.primary)
+
+            Spacer(minLength: 6)
+
+            Picker("", selection: $selection) {
+                ForEach(OpenAIProvider.allCases) { provider in
+                    Text(provider.title).tag(provider)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.segmented)
+            .controlSize(.small)
+            .fixedSize()
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct GPTAzureConfigRow: View {
+    @Binding var endpoint: String
+    @Binding var apiKey: String
+    @Binding var shouldFocusAPIKey: Bool
+    @FocusState private var isAPIKeyFocused: Bool
+    let hasConfig: Bool
+    let notice: String?
+    let save: () -> Void
+    let remove: () -> Void
+
+    private var trimmedEndpoint: String {
+        endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var trimmedAPIKey: String {
+        apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 8) {
+                Image(systemName: "link")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(hasConfig ? Color.green : Color.secondary)
+                    .frame(width: 16)
+
+                TextField(AppText.azureOpenAIEndpointPlaceholder, text: $endpoint)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.caption)
+                    .textContentType(.URL)
+                    .autocorrectionDisabled(true)
+            }
+
+            Text(AppText.azureOpenAIEndpointFormatHint)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, 24)
+
+            HStack(spacing: 8) {
+                Image(systemName: "key.fill")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(hasConfig ? Color.green : Color.secondary)
+                    .frame(width: 16)
+
+                SecureField(AppText.azureOpenAIAPIKeyPlaceholder, text: $apiKey)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.caption)
+                    .focused($isAPIKeyFocused)
+
+                Button {
+                    save()
+                } label: {
+                    Image(systemName: "checkmark.circle.fill")
+                }
+                .buttonStyle(.borderless)
+                .disabled(trimmedAPIKey.isEmpty || trimmedEndpoint.isEmpty)
+                .help(AppText.saveAzureOpenAIConfig)
+                .accessibilityLabel(AppText.saveAzureOpenAIConfig)
+
+                Button {
+                    remove()
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.borderless)
+                .disabled(!hasConfig)
+                .help(AppText.removeAzureOpenAIConfig)
+                .accessibilityLabel(AppText.removeAzureOpenAIConfig)
+            }
+
+            if let notice, !hasConfig {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(Color.orange)
+
+                    Text(notice)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(Color.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.leading, 24)
+            }
+
+            Text(hasConfig ? AppText.azureOpenAIConfigConfigured : AppText.azureOpenAIConfigNotConfigured)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(hasConfig ? Color.green : Color.secondary)
                 .padding(.leading, 24)
         }
         .padding(.horizontal, 8)

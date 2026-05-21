@@ -3,36 +3,89 @@ import SwiftUI
 struct SettingsView: View {
     @Bindable var session: TranslationSessionStore
     @State private var openAIAPIKey = ""
+    @State private var azureEndpoint = ""
+    @State private var azureAPIKey = ""
 
     var body: some View {
         Form {
-            Section(AppText.openAIAPIKey) {
-                SecureField(AppText.openAIAPIKeyPlaceholder, text: $openAIAPIKey)
-                    .textFieldStyle(.roundedBorder)
-
-                HStack {
-                    Text(session.hasOpenAIAPIKey ? AppText.openAIAPIKeyConfigured : AppText.openAIAPIKeyNotConfigured)
-                        .font(.caption)
-                        .foregroundStyle(session.hasOpenAIAPIKey ? .green : .secondary)
-
-                    Spacer()
-
-                    Button(AppText.saveOpenAIAPIKey) {
-                        session.saveOpenAIAPIKey(openAIAPIKey)
-                        openAIAPIKey = ""
+            Section(AppText.gptModels) {
+                Picker(AppText.openAIProvider, selection: $session.openAIProvider) {
+                    ForEach(OpenAIProvider.allCases) { provider in
+                        Text(provider.title).tag(provider)
                     }
-                    .disabled(openAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-
-                    Button(AppText.removeOpenAIAPIKey) {
-                        session.removeOpenAIAPIKey()
-                        openAIAPIKey = ""
-                    }
-                    .disabled(!session.hasOpenAIAPIKey)
                 }
+                .pickerStyle(.segmented)
+            }
 
-                Text(AppText.openAIAPIKeyDescription)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            switch session.openAIProvider {
+            case .openAI:
+                Section(AppText.openAIAPIKey) {
+                    SecureField(AppText.openAIAPIKeyPlaceholder, text: $openAIAPIKey)
+                        .textFieldStyle(.roundedBorder)
+
+                    HStack {
+                        Text(session.hasOpenAIAPIKey ? AppText.openAIAPIKeyConfigured : AppText.openAIAPIKeyNotConfigured)
+                            .font(.caption)
+                            .foregroundStyle(session.hasOpenAIAPIKey ? .green : .secondary)
+
+                        Spacer()
+
+                        Button(AppText.saveOpenAIAPIKey) {
+                            session.saveOpenAIAPIKey(openAIAPIKey)
+                            openAIAPIKey = ""
+                        }
+                        .disabled(openAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                        Button(AppText.removeOpenAIAPIKey) {
+                            session.removeOpenAIAPIKey()
+                            openAIAPIKey = ""
+                        }
+                        .disabled(!session.hasOpenAIAPIKey)
+                    }
+
+                    Text(AppText.openAIAPIKeyDescription)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            case .azure:
+                Section(AppText.openAIProviderAzureTitle) {
+                    TextField(AppText.azureOpenAIEndpointPlaceholder, text: $azureEndpoint)
+                        .textFieldStyle(.roundedBorder)
+                        .textContentType(.URL)
+                        .autocorrectionDisabled(true)
+
+                    Text(AppText.azureOpenAIEndpointFormatHint)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    SecureField(AppText.azureOpenAIAPIKeyPlaceholder, text: $azureAPIKey)
+                        .textFieldStyle(.roundedBorder)
+
+                    HStack {
+                        Text(session.hasAzureOpenAIConfig ? AppText.azureOpenAIConfigConfigured : AppText.azureOpenAIConfigNotConfigured)
+                            .font(.caption)
+                            .foregroundStyle(session.hasAzureOpenAIConfig ? .green : .secondary)
+
+                        Spacer()
+
+                        Button(AppText.saveAzureOpenAIConfig) {
+                            session.saveAzureOpenAIConfig(endpoint: azureEndpoint, apiKey: azureAPIKey)
+                            azureAPIKey = ""
+                            azureEndpoint = session.azureOpenAIEndpoint
+                        }
+                        .disabled(
+                            azureAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || azureEndpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        )
+
+                        Button(AppText.removeAzureOpenAIConfig) {
+                            session.removeAzureOpenAIConfig()
+                            azureAPIKey = ""
+                            azureEndpoint = ""
+                        }
+                        .disabled(!session.hasAzureOpenAIConfig)
+                    }
+                }
             }
 
             Section(AppText.transcript) {
@@ -114,6 +167,9 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 420)
         .padding()
+        .onAppear {
+            azureEndpoint = session.azureOpenAIEndpoint
+        }
     }
 }
 

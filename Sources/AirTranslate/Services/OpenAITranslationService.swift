@@ -98,6 +98,9 @@ private struct OpenAIErrorBody: Decodable {
 
 enum OpenAITranslationError: LocalizedError {
     case missingAPIKey
+    case missingAzureEndpoint
+    case missingAzureAPIKey
+    case transcriptionEndpointUnsupported
     case invalidResponse
     case emptyOutput
     case requestFailed(statusCode: Int, message: String?)
@@ -106,6 +109,12 @@ enum OpenAITranslationError: LocalizedError {
         switch self {
         case .missingAPIKey:
             AppText.openAIAPIKeyMissing
+        case .missingAzureEndpoint:
+            AppText.azureOpenAIEndpointMissing
+        case .missingAzureAPIKey:
+            AppText.azureOpenAIAPIKeyMissing
+        case .transcriptionEndpointUnsupported:
+            AppText.azureOpenAITranscriptionUnsupported
         case .invalidResponse:
             AppText.openAIInvalidResponse
         case .emptyOutput:
